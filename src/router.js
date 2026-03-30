@@ -3,11 +3,11 @@ import CustomerView from './views/CustomerView.vue';
 import SalesView from './views/SalesView.vue';
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
       path: '/',
-      redirect: '/customer'
+      redirect: { name: 'customer' }
     },
     {
       path: '/customer',
