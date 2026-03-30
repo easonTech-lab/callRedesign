@@ -20,6 +20,8 @@ const props = defineProps({
   }
 });
 
+const withBase = (path) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
+
 const messages = ref(structuredClone(props.initialMessages));
 const inputText = ref('');
 const showStickers = ref(false);
@@ -30,14 +32,14 @@ let uploadErrorTimer = null;
 let readStatusTimer = null;
 
 const stickers = [
-  { id: 'front', name: '皮卡正面', src: '/stickers/pika-front.png' },
-  { id: 'back', name: '皮卡背面', src: '/stickers/pika-back.png' },
-  { id: 'side', name: '皮卡側面', src: '/stickers/pika-side.png' },
-  { id: 'happy', name: '皮卡開心', src: '/stickers/pika-happy.png' },
-  { id: 'salute', name: '皮卡敬禮', src: '/stickers/pika-salute.png' },
-  { id: 'question', name: '皮卡疑問', src: '/stickers/pika-question.png' },
-  { id: 'explain', name: '皮卡說明', src: '/stickers/pika-explain.png' },
-  { id: 'sign', name: '皮卡舉牌', src: '/stickers/pika-sign.png' }
+  { id: 'front', name: '皮卡正面', src: withBase('/stickers/pika-front.png') },
+  { id: 'back', name: '皮卡背面', src: withBase('/stickers/pika-back.png') },
+  { id: 'side', name: '皮卡側面', src: withBase('/stickers/pika-side.png') },
+  { id: 'happy', name: '皮卡開心', src: withBase('/stickers/pika-happy.png') },
+  { id: 'salute', name: '皮卡敬禮', src: withBase('/stickers/pika-salute.png') },
+  { id: 'question', name: '皮卡疑問', src: withBase('/stickers/pika-question.png') },
+  { id: 'explain', name: '皮卡說明', src: withBase('/stickers/pika-explain.png') },
+  { id: 'sign', name: '皮卡舉牌', src: withBase('/stickers/pika-sign.png') }
 ];
 
 const quickReplies = [
@@ -48,7 +50,7 @@ const quickReplies = [
   '感謝您的通報，後續若有進度會再主動回覆您。'
 ];
 
-const agentAvatar = '/stickers/pika-happy.png';
+const agentAvatar = withBase('/stickers/pika-happy.png');
 const canSend = computed(() => inputText.value.trim().length > 0);
 const quickRepliesCollapsed = ref(false);
 
@@ -221,7 +223,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="app-shell">
     <div class="fixed-watermark" aria-hidden="true">
-      <img src="/branding/hsinchu-logo.svg" alt="" />
+      <img :src="withBase('/branding/hsinchu-logo.svg')" alt="" />
     </div>
 
     <header class="chat-header">
