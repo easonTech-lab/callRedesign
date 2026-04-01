@@ -26,6 +26,8 @@ const messages = ref(structuredClone(props.initialMessages));
 const inputText = ref('');
 const showStickers = ref(false);
 const uploadError = ref('');
+const showFeedbackModal = ref(false);
+const feedbackSubmitted = ref(false);
 const chatEndRef = ref(null);
 const fileInputRef = ref(null);
 let uploadErrorTimer = null;
@@ -149,6 +151,25 @@ const triggerFileUpload = () => {
   fileInputRef.value?.click();
 };
 
+const openFeedbackModal = () => {
+  feedbackSubmitted.value = false;
+  showFeedbackModal.value = true;
+};
+
+const closeFeedbackModal = () => {
+  showFeedbackModal.value = false;
+  feedbackSubmitted.value = false;
+};
+
+const handleFeedback = (score) => {
+  console.log('User Feedback:', score);
+  feedbackSubmitted.value = true;
+
+  window.setTimeout(() => {
+    closeFeedbackModal();
+  }, 1800);
+};
+
 const handleFileUpload = (event) => {
   const [file] = event.target.files || [];
   if (!file) {
@@ -227,7 +248,7 @@ onBeforeUnmount(() => {
     </div>
 
     <header class="chat-header">
-      <button type="button" class="end-chat-button">結束對話</button>
+      <button type="button" class="end-chat-button" @click="openFeedbackModal">結束對話</button>
       <h1>{{ title }}</h1>
     </header>
 
@@ -375,6 +396,81 @@ onBeforeUnmount(() => {
       <span>⚠</span>
       <span>{{ uploadError }}</span>
     </div>
+
+    <transition name="feedback-fade">
+      <div
+        v-if="showFeedbackModal"
+        class="feedback-overlay"
+        @click.self="closeFeedbackModal"
+      >
+        <div class="feedback-modal">
+          <template v-if="!feedbackSubmitted">
+            <div class="feedback-title">感謝您的使用</div>
+            <div class="feedback-subtitle">請問您對本次通話服務滿意嗎？</div>
+
+            <div class="feedback-actions">
+              <button
+                type="button"
+                class="feedback-option positive"
+                @click="handleFeedback('positive')"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true" class="feedback-icon">
+                  <path
+                    d="M7 10v10H4a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1h3Zm2 10h7.2a2 2 0 0 0 1.94-1.53l1.46-5.84A2 2 0 0 0 17.66 10H14V6.5A2.5 2.5 0 0 0 11.5 4l-.37.03L9 10.5V20Z"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1.7"
+                  />
+                </svg>
+                <span>滿意</span>
+              </button>
+
+              <button
+                type="button"
+                class="feedback-option negative"
+                @click="handleFeedback('negative')"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true" class="feedback-icon">
+                  <path
+                    d="M17 14V4h3a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-3ZM15 4H7.8a2 2 0 0 0-1.94 1.53L4.4 11.37A2 2 0 0 0 6.34 14H10v3.5A2.5 2.5 0 0 0 12.5 20l.37-.03L15 13.5V4Z"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1.7"
+                  />
+                </svg>
+                <span>不滿意</span>
+              </button>
+            </div>
+
+            <div class="feedback-footer">
+              <button type="button" class="feedback-cancel" @click="closeFeedbackModal">返回通話</button>
+            </div>
+          </template>
+
+          <template v-else>
+            <div class="feedback-success">
+              <svg viewBox="0 0 24 24" aria-hidden="true" class="feedback-success-icon">
+                <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8" />
+                <path
+                  d="m8.7 12.3 2.2 2.2 4.8-5.2"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="1.9"
+                />
+              </svg>
+              <div class="feedback-title">回饋已送出</div>
+              <div class="feedback-subtitle">祝您有美好的一天！</div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </transition>
 
     <footer class="chat-footer">
       <section v-if="salesMode" class="quick-replies" :class="{ collapsed: quickRepliesCollapsed }">
@@ -845,6 +941,131 @@ onBeforeUnmount(() => {
   box-shadow: 0 10px 24px rgba(226, 78, 79, 0.25);
   font-size: 12px;
   font-weight: 700;
+}
+
+.feedback-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(16, 24, 40, 0.56);
+  backdrop-filter: blur(4px);
+}
+
+.feedback-modal {
+  width: min(100%, 400px);
+  padding: 32px 28px 24px;
+  background: #ffffff;
+  border-radius: 22px;
+  box-shadow: 0 22px 48px rgba(20, 34, 54, 0.22);
+  text-align: center;
+}
+
+.feedback-title {
+  color: #1c1c1e;
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.feedback-subtitle {
+  margin-top: 8px;
+  color: #8e8e93;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.feedback-actions {
+  display: flex;
+  justify-content: center;
+  gap: 40px;
+  margin-top: 28px;
+  margin-bottom: 28px;
+}
+
+.feedback-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 0;
+  color: #d1d1d6;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition:
+    color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.feedback-option span {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.feedback-option.positive:hover {
+  color: #34c759;
+  transform: translateY(-4px);
+}
+
+.feedback-option.negative:hover {
+  color: #ff3b30;
+  transform: translateY(-4px);
+}
+
+.feedback-icon {
+  width: 56px;
+  height: 56px;
+}
+
+.feedback-footer {
+  padding-top: 20px;
+  border-top: 1px solid #e5e5ea;
+}
+
+.feedback-cancel {
+  color: #005495;
+  background: transparent;
+  border: 0;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.feedback-success {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 0;
+}
+
+.feedback-success-icon {
+  width: 64px;
+  height: 64px;
+  margin-bottom: 16px;
+  color: #34c759;
+}
+
+.feedback-fade-enter-active,
+.feedback-fade-leave-active {
+  transition: opacity 0.24s ease;
+}
+
+.feedback-fade-enter-active .feedback-modal,
+.feedback-fade-leave-active .feedback-modal {
+  transition: transform 0.24s ease;
+}
+
+.feedback-fade-enter-from,
+.feedback-fade-leave-to {
+  opacity: 0;
+}
+
+.feedback-fade-enter-from .feedback-modal,
+.feedback-fade-leave-to .feedback-modal {
+  transform: scale(0.94);
 }
 
 .chat-footer {
