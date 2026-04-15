@@ -116,16 +116,16 @@ const quickRepliesCollapsed = ref(false);
 
 const serviceCards = [
   {
-    title: '道路報修',
+    title: '弱勢照顧服務',
     icon: 'pin',
     hero: withBase('/ai-cards/road.png'),
-    links: ['路面坑洞通報', '路燈故障維修', '號誌異常處理']
+    links: ['長者關懷服務', '身心障礙協助', '急難救助申請']
   },
   {
-    title: '環境衛生',
+    title: '都市更新與住宅服務',
     icon: 'pulse',
     hero: withBase('/ai-cards/hygiene.png'),
-    links: ['垃圾清運查詢', '環境消毒申請', '噪音檢舉']
+    links: ['交屋 / 入住相關申請', '住宅補助申請', '都更 / 社宅資訊']
   },
   {
     title: '福利補助',
