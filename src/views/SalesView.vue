@@ -34,5 +34,6 @@ const messages = [
     title="新竹市政府1999文字客服"
     :initial-messages="messages"
     sales-mode
+    sales-copilot
   />
 </template>
