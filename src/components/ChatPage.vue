@@ -75,19 +75,266 @@ const serviceCanSlide = ref(false);
 const serviceIndex = ref(0);
 const serviceViewportWidth = ref(0);
 const serviceMaxOffset = ref(0);
-const copilotSuggestions = ref([
-  {
-    id: 's1',
-    content:
-      '感謝您的通報。關於中正路123號路口的狀況，我們已轉請交通處工程科進行現場會勘，評估增設標誌或調整號誌秒數的可行性。'
-  },
-  {
-    id: 's2',
-    content:
-      '您好，關於該路口的交通設計問題，我們已錄案辦理。後續將會同專業技師前往查勘，若有最新處理進度，會主動通知您。'
-  }
-]);
 const copilotMobileOpen = ref(false);
+const activeTab = ref('formal');
+const copilotVariantIndex = ref(0);
+const copilotRefreshTick = ref(0);
+const recommendationData = {
+  formal: [
+    [
+      {
+        id: 'f1a',
+        content:
+          '感謝您的通報。關於中正路123號路口之交通設計，本府已錄案辦理。目前已函請交通處工程科儘速派員前往現場會勘，評估改善之可行性。',
+        source: '民意案件處理要點 第14條'
+      },
+      {
+        id: 'f2a',
+        content:
+          '您好，關於您反映的路口設計問題，本處已收到您的寶貴意見。我們將安排專業技師進行現地評估，並依據會勘結果研議優化方案，謝謝您的關心。',
+        source: '交通管理標準作業流程'
+      },
+      {
+        id: 'f3a',
+        content:
+          '敬啟者：有關中正路123號路口之交通安全疑慮，本府交通處已受理。將針對該路段流量與號誌配置進行全面盤查，後續進度將以公文或簡訊正式回覆。',
+        source: '公文撰寫參考規範'
+      }
+    ],
+    [
+      {
+        id: 'f1b',
+        content:
+          '感謝您的意見回報。針對中正路123號路口之交通設計疑慮，本府已完成受理並交由權責單位研處，將儘速安排現場會勘及評估改善方案。',
+        source: '民意案件處理要點 第14條'
+      },
+      {
+        id: 'f2b',
+        content:
+          '您好，您所反映的路口問題已納入案件辦理。本處將依標準程序派員查勘，並依實際狀況研擬後續調整，感謝您的提醒。',
+        source: '交通管理標準作業流程'
+      },
+      {
+        id: 'f3b',
+        content:
+          '敬復者：中正路123號路口之交通安全案件已列管處理。後續將就車流、號誌與路型進行綜合評估，並以正式方式通知進度。',
+        source: '公文撰寫參考規範'
+      }
+    ],
+    [
+      {
+        id: 'f1c',
+        content:
+          '感謝通報。本府已就中正路123號路口之交通設計問題立案處理，並已請交通處工程科安排會勘，以確認改善方向。',
+        source: '民意案件處理要點 第14條'
+      },
+      {
+        id: 'f2c',
+        content:
+          '您好，您所反映之路口設計狀況已進入處理流程。我們會先進行現勘，再依結果評估是否需要調整設施或號誌配置。',
+        source: '交通管理標準作業流程'
+      },
+      {
+        id: 'f3c',
+        content:
+          '敬啟者：有關中正路123號路口交通安全疑慮，業已受理。相關單位將針對現場條件進行盤點，並於後續提供正式回覆。',
+        source: '公文撰寫參考規範'
+      }
+    ]
+  ],
+  friendly: [
+    [
+      {
+        id: 'fr1a',
+        content:
+          '您好，非常感謝您反映中正路123號路口的狀況，我們非常重視您的用路安全！我已經幫您聯繫交通處的同仁了，他們會儘快去現場看看，請您放心。',
+        source: '1999 客服親切對話指南'
+      },
+      {
+        id: 'fr2a',
+        content:
+          '真的很謝謝您特地來提醒我們！這個路口的設計我們會馬上請專家來評估，希望能讓大家開車騎車更安全。有任何新進度，我都會第一時間告訴您喔！',
+        source: '客服感性溝通話術表'
+      },
+      {
+        id: 'fr3a',
+        content:
+          '看到您反映這個問題，我們也感到非常關心。您的建議對改善新竹交通非常重要，我們會努力處理好的，這段期間經過該路口請一定要注意安全喔！',
+        source: '市民滿意度提升指引'
+      }
+    ],
+    [
+      {
+        id: 'fr1b',
+        content:
+          '您好，謝謝您提醒我們中正路123號路口的狀況，我們會立刻幫您轉給交通處的同仁處理，也請您放心，我們會持續追蹤。',
+        source: '1999 客服親切對話指南'
+      },
+      {
+        id: 'fr2b',
+        content:
+          '真的很感謝您願意告訴我們這個問題！我們會請專人去看現場狀況，盡快確認怎麼改善比較好，有進度我會再跟您說。',
+        source: '客服感性溝通話術表'
+      },
+      {
+        id: 'fr3b',
+        content:
+          '謝謝您熱心反映，這個路口的安全我們很重視，我們會趕快處理，也請您在改善前經過該路段時多留意安全喔！',
+        source: '市民滿意度提升指引'
+      }
+    ],
+    [
+      {
+        id: 'fr1c',
+        content:
+          '您好，謝謝您提出這個狀況，我們已經幫您轉給相關同仁了，會盡快去看看中正路123號路口的情形，謝謝您。',
+        source: '1999 客服親切對話指南'
+      },
+      {
+        id: 'fr2c',
+        content:
+          '很感謝您幫忙提醒！我們會安排人員到現場確認，盡力找出最合適的改善方式，後續有消息會第一時間通知您。',
+        source: '客服感性溝通話術表'
+      },
+      {
+        id: 'fr3c',
+        content:
+          '您的建議非常重要，我們會盡快請人處理這個路口問題，改善完成前也提醒您經過時多注意安全。',
+        source: '市民滿意度提升指引'
+      }
+    ]
+  ],
+  sop: [
+    [
+      {
+        id: 's1a',
+        content: '【路口改善SOP】已啟動。階段1：受理報案（完成）；階段2：現地會勘（待辦）；階段3：方案核定。預計於5個工作日內完成初評。',
+        source: '交通工程作業手冊 A-02'
+      },
+      {
+        id: 's2a',
+        content:
+          '案件編號 TC-20260327-001。依據作業準則，本案已轉分辦至「交通工程科」。案件類別：路口幾何改善。預計會勘時間：下週三前。',
+        source: '政府資訊公開作業程序'
+      },
+      {
+        id: 's3a',
+        content:
+          '系統提示：該路口於半年內已有2次類似反映。本案已加註「優先處理」。流程已進入專案追蹤紀錄，客服人員將於每週五更新進度予民眾。',
+        source: '異常案件追蹤管理辦法'
+      }
+    ],
+    [
+      {
+        id: 's1b',
+        content:
+          '【改善流程】已受理。階段1：案件建立；階段2：現場勘查；階段3：評估改善。預估於5個工作日內完成初步研判。',
+        source: '交通工程作業手冊 A-02'
+      },
+      {
+        id: 's2b',
+        content:
+          '案件編號 TC-20260327-001 已完成分辦，承辦單位為「交通工程科」。案件類型：路口幾何改善；預計會勘時程：下週三前。',
+        source: '政府資訊公開作業程序'
+      },
+      {
+        id: 's3b',
+        content:
+          '系統提示：該路口近期有重複反映紀錄，已標記為優先案件。後續進度將納入追蹤，並按週更新處理狀態。',
+        source: '異常案件追蹤管理辦法'
+      }
+    ],
+    [
+      {
+        id: 's1c',
+        content:
+          '【SOP處理】目前狀態：已完成受理；待進行現地會勘；後續進入方案核定。預計 5 個工作日內可完成初評。',
+        source: '交通工程作業手冊 A-02'
+      },
+      {
+        id: 's2c',
+        content:
+          '案件編號 TC-20260327-001 已送交交通工程科。類別：路口改善；預計會勘時間為下週三前，請持續留意案件更新。',
+        source: '政府資訊公開作業程序'
+      },
+      {
+        id: 's3c',
+        content:
+          '系統提醒：案件已列入優先追蹤，並依既定流程安排後續查核。每週五更新一次處理進度。',
+        source: '異常案件追蹤管理辦法'
+      }
+    ]
+  ],
+  short: [
+    [
+      {
+        id: 'sh1a',
+        content: '收到，感謝反映。中正路123號路口問題已轉交交通處評估，後續再行通知。',
+        source: '精簡回覆範本'
+      },
+      {
+        id: 'sh2a',
+        content: '感謝提供資訊，已錄案辦理。將安排現場勘查並依規處置。',
+        source: '快速回覆 SOP'
+      },
+      {
+        id: 'sh3a',
+        content: '已轉達相關單位，後續進度將由系統主動向您回報，謝謝。',
+        source: '系統自動回覆庫'
+      }
+    ],
+    [
+      {
+        id: 'sh1b',
+        content: '收到，這個路口的情況我已幫您轉給交通處評估，之後會再通知您。',
+        source: '精簡回覆範本'
+      },
+      {
+        id: 'sh2b',
+        content: '謝謝您提供資訊，案件已受理並會安排現場勘查。',
+        source: '快速回覆 SOP'
+      },
+      {
+        id: 'sh3b',
+        content: '相關單位已收到通報，後續進度會主動回覆您。',
+        source: '系統自動回覆庫'
+      }
+    ],
+    [
+      {
+        id: 'sh1c',
+        content: '已收到，問題已轉交相關單位處理，後續會再通知您。',
+        source: '精簡回覆範本'
+      },
+      {
+        id: 'sh2c',
+        content: '感謝提供資訊，已錄案，會安排勘查並依規處理。',
+        source: '快速回覆 SOP'
+      },
+      {
+        id: 'sh3c',
+        content: '案件已轉達，後續進度將由系統通知您。',
+        source: '系統自動回覆庫'
+      }
+    ]
+  ]
+};
+const nextSteps = [
+  '詢問民眾是否需要簡訊即時回報進度',
+  '確認該地點是否有發生過具體碰撞意外',
+  '提醒民眾在該路口改善前注意安全'
+];
+const possibleQuestions = [
+  '「大概什麼時候會有人去勘查？」',
+  '「如果還是沒改善要怎麼追蹤？」',
+  '「那邊的照明燈好像也有問題？」'
+];
+const copilotSuggestions = computed(() =>
+  (recommendationData[activeTab.value][copilotVariantIndex.value % recommendationData[activeTab.value].length] ?? []).map((item) => ({
+    ...item,
+    refreshStamp: copilotRefreshTick.value
+  }))
+);
 let uploadErrorTimer = null;
 let readStatusTimer = null;
 
@@ -111,7 +358,9 @@ const quickReplies = [
 ];
 
 const agentAvatar = withBase('/stickers/pika-happy.png');
+const userAvatar = withBase('/avatars/frame-8.svg');
 const canSend = computed(() => inputText.value.trim().length > 0);
+const speakingDraft = ref(false);
 const quickRepliesCollapsed = ref(false);
 
 const serviceCards = [
@@ -174,6 +423,50 @@ const copilotQuality = computed(() => {
 const scrollToBottom = async () => {
   await nextTick();
   chatEndRef.value?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+};
+
+const normalizeSpeechText = (text) =>
+  (text ?? '')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/^\s*#{1,6}\s+/gm, '')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/^\s*[-•]\s+/gm, '')
+    .replace(/^\s*\d+\.\s+/gm, '')
+    .replace(/\n+/g, '。')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const playDraftAudio = () => {
+  const speechText = normalizeSpeechText(inputText.value);
+
+  if (!window.speechSynthesis || !speechText) {
+    return;
+  }
+
+  if (speakingDraft.value && window.speechSynthesis.speaking) {
+    window.speechSynthesis.cancel();
+    speakingDraft.value = false;
+    return;
+  }
+
+  window.speechSynthesis.cancel();
+
+  const utterance = new SpeechSynthesisUtterance(speechText);
+  utterance.lang = 'zh-TW';
+  utterance.rate = 0.95;
+  utterance.pitch = 1;
+  utterance.onstart = () => {
+    speakingDraft.value = true;
+  };
+  utterance.onend = () => {
+    speakingDraft.value = false;
+  };
+  utterance.onerror = () => {
+    speakingDraft.value = false;
+  };
+
+  window.speechSynthesis.speak(utterance);
 };
 
 const updateServiceMetrics = () => {
@@ -363,25 +656,15 @@ const switchToHuman = () => {
 };
 
 const applyCopilotSuggestion = (text) => {
-  inputText.value = text;
+  inputText.value = typeof text === 'string' ? text : text?.content || '';
 };
 
 const regenerateCopilotSuggestions = () => {
-  const base = lastUserMessage.value?.text || '';
-
-  copilotSuggestions.value = [
-    {
-      id: `s_${Date.now()}_1`,
-      content: base
-        ? `理解您的關切。針對「${base.slice(0, 18)}${base.length > 18 ? '…' : ''}」我們已優先排程處理，預計 3–5 個工作天完成初步會勘，完成後將第一時間回覆改善方向。`
-        : '理解您的關切，我們已優先排程處理，預計 3–5 個工作天完成初步會勘，完成後將第一時間回覆改善方向。'
-    },
-    {
-      id: `s_${Date.now()}_2`,
-      content:
-        '為了加速處理，想請您協助補充：1) 事故常發時段 2) 具體位置/地標 3) 是否有照片或行車記錄器畫面。收到後我們會立即轉請相關單位研判。'
-    }
-  ];
+  const variants = recommendationData[activeTab.value] ?? [];
+  if (variants.length > 0) {
+    copilotVariantIndex.value = (copilotVariantIndex.value + 1) % variants.length;
+  }
+  copilotRefreshTick.value += 1;
 };
 
 const simulateCopilotUserMessage = () => {
@@ -393,8 +676,6 @@ const simulateCopilotUserMessage = () => {
     time: getTime(),
     status: 'read'
   });
-
-  regenerateCopilotSuggestions();
 };
 
 const showError = (message) => {
@@ -556,6 +837,9 @@ onBeforeUnmount(() => {
   if (readStatusTimer) {
     clearTimeout(readStatusTimer);
   }
+
+  window.speechSynthesis?.cancel?.();
+  speakingDraft.value = false;
 
   window.removeEventListener('resize', updateServiceMetrics);
   window.removeEventListener('keydown', handleGlobalKeydown);
@@ -762,56 +1046,7 @@ onBeforeUnmount(() => {
             </div>
 
             <div v-if="msg.sender === 'user'" class="avatar avatar-user">
-              <svg viewBox="0 0 64 64" aria-hidden="true" class="avatar-image avatar-image-user">
-                <circle cx="32" cy="24" r="17" fill="#ffc6bf" />
-                <path
-                  d="M17 20c0-11 7.8-17 15-17s15 6 15 17v5H17Z"
-                  fill="#8f4a17"
-                />
-                <path
-                  d="M23 47c2.8-4.1 7-6.2 9-6.2s6.2 2.1 9 6.2l1.8 12H21.2Z"
-                  fill="#e9f2f8"
-                />
-                <path
-                  d="M18 64c0-8.7 5.8-16 14-16s14 7.3 14 16Z"
-                  fill="#c9dfef"
-                />
-                <path d="M29 48h6v16h-6z" fill="#eb4d63" />
-                <path d="m32 46 4 5h-8Z" fill="#ffffff" />
-                <ellipse cx="25" cy="27" rx="2.2" ry="2.8" fill="#8f4a17" />
-                <ellipse cx="39" cy="27" rx="2.2" ry="2.8" fill="#8f4a17" />
-                <path
-                  d="M27 35c3.3 2.2 6.7 2.2 10 0"
-                  fill="none"
-                  stroke="#f16374"
-                  stroke-linecap="round"
-                  stroke-width="1.4"
-                />
-                <path
-                  d="M20.5 26.5c1.3-1.4 2.8-2 4.6-2"
-                  fill="none"
-                  stroke="#8f4a17"
-                  stroke-linecap="round"
-                  stroke-width="1.6"
-                />
-                <path
-                  d="M38.9 24.5c1.8 0 3.3.6 4.6 2"
-                  fill="none"
-                  stroke="#8f4a17"
-                  stroke-linecap="round"
-                  stroke-width="1.6"
-                />
-                <path
-                  d="M31 28.3c-1.1 1.7-1.8 3.1-1.9 4.2.9.6 1.8.9 2.9.9"
-                  fill="none"
-                  stroke="#ea8c87"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="1.2"
-                />
-                <path d="M13.6 28c-2.2 0-4 1.7-4 3.8 0 2 1.5 3.8 3.4 4.1" fill="#ffc6bf" />
-                <path d="M50.4 28c2.2 0 4 1.7 4 3.8 0 2-1.5 3.8-3.4 4.1" fill="#ffc6bf" />
-              </svg>
+              <img :src="userAvatar" alt="使用者頭像" class="avatar-image avatar-image-user" />
             </div>
           </template>
         </div>
@@ -865,7 +1100,12 @@ onBeforeUnmount(() => {
               <span>值機員快速回覆模板</span>
               <div class="quick-replies-right">
                 <div class="quick-replies-tools">
-                  <span>點擊即可快速插入</span>
+                  <span
+                    class="quick-replies-note"
+                    style="color: #5f7188; font-size: 13px; font-weight: 400; letter-spacing: 0; opacity: 0.92;"
+                  >
+                    點擊即可快速插入
+                  </span>
                 </div>
                 <button
                   type="button"
@@ -961,6 +1201,39 @@ onBeforeUnmount(() => {
                 @keydown.enter="sendMessage"
               />
             </div>
+
+            <button
+              type="button"
+              class="icon-button draft-audio-button"
+              :class="{ active: speakingDraft }"
+              :disabled="!canSend"
+              :aria-label="speakingDraft ? '停止朗讀' : '朗讀草稿'"
+              @click="playDraftAudio"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" class="toolbar-icon">
+                <path
+                  d="M11 5.8 7.8 8.5H5.5A1.5 1.5 0 0 0 4 10v4a1.5 1.5 0 0 0 1.5 1.5h2.3L11 18.2V5.8Z"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M14.8 8.6a4.2 4.2 0 0 1 0 6.8"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                />
+                <path
+                  d="M16.8 6.6a7 7 0 0 1 0 10.8"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                />
+              </svg>
+            </button>
 
             <button
               type="button"
@@ -1180,160 +1453,87 @@ onBeforeUnmount(() => {
 
         <div class="copilot-body">
           <section class="copilot-section">
-            <div class="copilot-section-title spaced">
-              <svg viewBox="0 0 24 24" aria-hidden="true" class="copilot-section-icon">
-                <path
-                  d="M4.8 19.2V5.2"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                  stroke-linecap="round"
-                />
-                <path
-                  d="M4.8 19.2h14.4"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                  stroke-linecap="round"
-                />
-                <path
-                  d="M8.4 16v-4.4M12 16V9.2M15.6 16v-2.6"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                  stroke-linecap="round"
-                />
-              </svg>
-              <span>即時對話質檢</span>
+            <div class="copilot-tab-shell">
+              <div class="copilot-tab-header">
+                <h3 class="copilot-tab-title">
+                  <svg viewBox="0 0 24 24" aria-hidden="true" class="copilot-tab-icon">
+                    <path d="M12 3.5 13.8 9.2 19.5 11 13.8 12.8 12 18.5 10.2 12.8 4.5 11 10.2 9.2Z" fill="currentColor" />
+                  </svg>
+                  <span>推薦類別切換</span>
+                </h3>
+              </div>
+
+              <div class="copilot-tabs">
+                <button
+                  v-for="tab in [
+                    { id: 'formal', label: '正式版' },
+                    { id: 'friendly', label: '親切版' },
+                    { id: 'sop', label: 'SOP版' },
+                    { id: 'short', label: '簡短版' }
+                  ]"
+                  :key="tab.id"
+                  type="button"
+                  class="copilot-tab"
+                  :class="{ active: activeTab === tab.id }"
+                  @click="activeTab = tab.id"
+                >
+                  {{ tab.label }}
+                </button>
+              </div>
             </div>
 
-            <div class="copilot-metrics" v-if="copilotQuality">
-              <div class="copilot-metric-row">
-                <span>民眾情緒狀態</span>
-                <span class="copilot-mood warning">
-                  <svg viewBox="0 0 24 24" aria-hidden="true" class="copilot-mood-icon">
-                    <circle cx="12" cy="12" r="8.2" fill="none" stroke="currentColor" stroke-width="1.8" />
+            <div class="copilot-recommendation-head">
+              <span class="copilot-recommendation-count">AI 推薦選項 ({{ copilotSuggestions.length }})</span>
+              <button type="button" class="copilot-refresh" @click="regenerateCopilotSuggestions">重新生成</button>
+            </div>
+
+            <div class="copilot-recommendation-list">
+              <article
+                v-for="(item, idx) in copilotSuggestions"
+                :key="`${item.id}-${item.refreshStamp}`"
+                class="copilot-recommendation-card"
+              >
+                <div class="copilot-recommendation-card-head">
+                  <span
+                    class="copilot-chip-index"
+                    :class="[
+                      idx === 0 ? 'primary' : '',
+                      idx === 1 ? 'tertiary' : '',
+                      idx === 2 ? 'yellow' : ''
+                    ]"
+                  >
+                    選項 {{ idx + 1 }}
+                  </span>
+                </div>
+                <p class="copilot-recommendation-text">{{ item.content }}</p>
+                <button type="button" class="copilot-use-button" @click="applyCopilotSuggestion(item.content)">
+                  採用此版本
+                  <svg viewBox="0 0 24 24" aria-hidden="true" class="copilot-use-icon">
                     <path
-                      d="M8.7 10.4h.01M15.3 10.4h.01"
+                      d="m9 6 6 6-6 6"
                       fill="none"
                       stroke="currentColor"
-                      stroke-width="2.4"
                       stroke-linecap="round"
-                    />
-                    <path
-                      d="M9 16c.9-1.1 1.9-1.6 3-1.6s2.1.5 3 1.6"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="1.8"
-                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="1.9"
                     />
                   </svg>
-                  <span>{{ copilotQuality.moodLabel }}</span>
-                </span>
-              </div>
-
-              <div class="copilot-progress">
-                <div class="copilot-progress-meta">
-                  <span>當前對話合規性</span>
-                  <span class="copilot-progress-score">{{ copilotQuality.compliance }}%</span>
-                </div>
-                <div class="copilot-progress-bar">
-                  <div class="copilot-progress-fill" :style="{ width: `${copilotQuality.compliance}%` }"></div>
-                </div>
-              </div>
-
-              <div class="copilot-hint">
-                <span class="copilot-hint-label">提示：</span>
-                <span>{{ copilotQuality.hint }}</span>
-              </div>
+                </button>
+              </article>
             </div>
-          </section>
-
-          <section class="copilot-section">
-            <div class="copilot-section-head">
-              <div class="copilot-section-title">
-                <svg viewBox="0 0 24 24" aria-hidden="true" class="copilot-section-icon">
-                  <path
-                    d="M9 2.8h6"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.7"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  />
-                  <path
-                    d="M12 2.8v2.1"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.7"
-                    stroke-linecap="round"
-                  />
-                  <path
-                    d="M6.4 7.7h11.2a2.2 2.2 0 0 1 2.2 2.2v7.1a2.2 2.2 0 0 1-2.2 2.2H6.4A2.2 2.2 0 0 1 4.2 17V9.9a2.2 2.2 0 0 1 2.2-2.2Z"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.7"
-                    stroke-linejoin="round"
-                  />
-                  <path
-                    d="M9.2 12.2h.01M14.8 12.2h.01"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2.4"
-                    stroke-linecap="round"
-                  />
-                </svg>
-                <span>AI 推薦回覆</span>
-              </div>
-              <span class="copilot-context-note">已根據語境更新</span>
-            </div>
-
-            <div class="copilot-suggestions">
-              <button
-                v-for="suggestion in copilotSuggestions"
-                :key="suggestion.id"
-                type="button"
-                class="copilot-suggestion"
-                @click="applyCopilotSuggestion(suggestion.content)"
-              >
-                <div class="copilot-suggestion-text">{{ suggestion.content }}</div>
-                <div class="copilot-suggestion-action">使用此回覆 →</div>
-              </button>
-            </div>
-
-            <button type="button" class="copilot-secondary" @click="regenerateCopilotSuggestions">
-              重新生成建議
-            </button>
           </section>
 
           <section class="copilot-section">
             <div class="copilot-section-title spaced">
-              <svg viewBox="0 0 24 24" aria-hidden="true" class="copilot-section-icon">
-                <circle
-                  cx="11"
-                  cy="11"
-                  r="6.6"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                />
-                <path
-                  d="M16.4 16.4 20 20"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                  stroke-linecap="round"
-                />
+              <svg viewBox="0 0 24 24" aria-hidden="true" class="copilot-section-icon-lucide yellow">
+                <path d="M13 2.5 6.8 13h4.3L10.2 21.5 17.2 10H13Z" fill="currentColor" />
               </svg>
-              <span>知識庫相關條目</span>
+              <span>下一步建議</span>
             </div>
-
-            <div class="copilot-kb">
-              <button type="button" class="copilot-kb-item" @click="sendText('新竹市政府路口會勘標準作業程序 (SOP)')">
-                新竹市政府路口會勘標準作業程序 (SOP)
-              </button>
-              <button type="button" class="copilot-kb-item" @click="sendText('交通工程科 2026 會勘進度表')">
-                交通工程科 2026 會勘進度表
+            <div class="copilot-step-panel">
+              <button v-for="(step, index) in nextSteps" :key="step" type="button" class="copilot-step-item">
+                <span class="copilot-step-number">{{ index + 1 }}</span>
+                <span class="copilot-step-text">{{ step }}</span>
               </button>
             </div>
           </section>
@@ -1483,6 +1683,59 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+:global(:root) {
+  --color-primary-400: #6764f0;
+  --color-primary-500: #4c44ea;
+  --color-primary-50: #eaeafd;
+
+  --color-secondary-100: #e3e7ff;
+  --color-secondary-900: #8c89f1;
+  --color-secondary-700: #9796ff;
+  --color-secondary-600: #a0a1ff;
+  --color-secondary-500: #c8c9f1;
+  --color-secondary-50: #f5f6ff;
+
+  --color-tertiary-700: #3697b4;
+  --color-tertiary-500: #53b1cd;
+  --color-tertiary-300: #87d2e3;
+  --color-tertiary-50: #e7f6fa;
+
+  --color-yellow-500: #f1d046;
+  --color-yellow-100: #fbf1c5;
+  --color-yellow-50: #fef9e5;
+
+  --color-darkblue-500: #1f2a52;
+  --color-darkblue-50: #f1f2f5;
+
+  /* Backwards-compatible aliases used by the current page styles. */
+  --primary-400-p: var(--color-primary-400);
+  --primary-500-p: var(--color-primary-500);
+  --primary-50-p: var(--color-primary-50);
+  --primary-100-p: var(--color-secondary-50);
+  --primary-200-p: var(--color-secondary-100);
+  --primary-300-p: var(--color-secondary-600);
+  --primary-rgb-p: 103, 100, 240;
+
+  --secondary-100-p: var(--color-secondary-100);
+  --secondary-900-p: var(--color-secondary-900);
+  --secondary-700-p: var(--color-secondary-700);
+  --secondary-600-p: var(--color-secondary-600);
+  --secondary-500-p: var(--color-secondary-500);
+  --secondary-50-p: var(--color-secondary-50);
+
+  --tertiary-700-p: var(--color-tertiary-700);
+  --tertiary-500-p: var(--color-tertiary-500);
+  --tertiary-300-p: var(--color-tertiary-300);
+  --tertiary-50-p: var(--color-tertiary-50);
+
+  --yellow-500-p: var(--color-yellow-500);
+  --yellow-100-p: var(--color-yellow-100);
+  --yellow-50-p: var(--color-yellow-50);
+
+  --darkblue-500-p: var(--color-darkblue-500);
+  --darkblue-50-p: var(--color-darkblue-50);
+}
+
 :global(*) {
   box-sizing: border-box;
 }
@@ -1494,7 +1747,7 @@ onBeforeUnmount(() => {
     "PingFang TC",
     "Microsoft JhengHei",
     sans-serif;
-  background: #dcecff;
+  background: linear-gradient(180deg, #eaeafd 0%, #ffffff 100%);
 }
 
 :global(button),
@@ -1504,7 +1757,7 @@ onBeforeUnmount(() => {
 
 :global(button:focus-visible),
 :global(input:focus-visible) {
-  outline: 3px solid rgba(31, 111, 216, 0.35);
+  outline: 3px solid rgba(var(--primary-rgb-p), 0.35);
   outline-offset: 2px;
 }
 
@@ -1530,8 +1783,8 @@ onBeforeUnmount(() => {
   flex-direction: column;
   height: 100vh;
   background:
-    radial-gradient(circle at top right, rgba(255, 255, 255, 0.75), transparent 22%),
-    linear-gradient(180deg, #eef8ff 0%, #dceeff 100%);
+    radial-gradient(circle at top right, rgba(255, 255, 255, 0.82), transparent 24%),
+    linear-gradient(180deg, #eaeafd 0%, #ffffff 100%);
   color: #243247;
 }
 
@@ -1573,13 +1826,13 @@ onBeforeUnmount(() => {
 
 .chat-header {
   flex-shrink: 0;
-  padding: 16px 24px 20px;
+  padding: 12px 20px 14px;
   text-align: center;
   color: #fff;
-  background: linear-gradient(180deg, #0c5da7 0%, #004f91 100%);
-  border-bottom-left-radius: 40px;
-  border-bottom-right-radius: 40px;
-  box-shadow: 0 10px 24px rgba(0, 84, 149, 0.18);
+  background: linear-gradient(180deg, var(--primary-400-p) 0%, var(--primary-500-p) 100%);
+  border-bottom-left-radius: 32px;
+  border-bottom-right-radius: 32px;
+  box-shadow: 0 10px 24px rgba(var(--primary-rgb-p), 0.18);
 }
 
 .end-chat-button {
@@ -1610,13 +1863,13 @@ onBeforeUnmount(() => {
 
 .chat-header h1 {
   margin: 0;
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 800;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.12em;
 }
 
 .route-subtitle {
-  padding: 14px 16px 10px;
+  padding: 10px 16px 8px;
   color: #445266;
   font-size: 16px;
   font-weight: 700;
@@ -1648,7 +1901,7 @@ onBeforeUnmount(() => {
   display: none;
   width: 380px;
   flex-shrink: 0;
-  border-left: 1px solid rgba(214, 228, 242, 0.9);
+  border-left: 1px solid var(--primary-200-p);
   background: rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(8px);
 }
@@ -1661,9 +1914,9 @@ onBeforeUnmount(() => {
 
 .copilot-sidebar {
   display: none;
-  width: 380px;
+  width: 520px;
   flex-shrink: 0;
-  border-left: 1px solid rgba(214, 228, 242, 0.9);
+  border-left: 1px solid var(--primary-200-p);
   background: rgba(255, 255, 255, 0.96);
   font-size: 16px;
   font-weight: 400;
@@ -1709,7 +1962,7 @@ onBeforeUnmount(() => {
     bottom: 0;
     width: min(92vw, 420px);
     border-radius: 18px 0 0 18px;
-    border: 1px solid rgba(214, 228, 242, 0.9);
+    border: 1px solid var(--primary-200-p);
     box-shadow: 0 24px 50px rgba(20, 34, 54, 0.18);
     transform: translateX(100%);
     opacity: 0;
@@ -1786,11 +2039,13 @@ onBeforeUnmount(() => {
 }
 
 .copilot-header {
-  padding: 14px 14px 12px;
-  border-bottom: 1px solid rgba(232, 242, 252, 1);
-  background: rgba(248, 250, 252, 0.85);
-  display: grid;
-  gap: 8px;
+  padding: 16px 16px 14px;
+  border-bottom: 1px solid var(--primary-200-p);
+  background: rgba(255, 255, 255, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .copilot-title {
@@ -1800,17 +2055,19 @@ onBeforeUnmount(() => {
   font-weight: 1000;
   color: #2b3d56;
   font-size: 18px;
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .copilot-badge {
   width: 30px;
   height: 30px;
   border-radius: 10px;
-  background: rgba(190, 242, 255, 0.6);
-  color: #15a0c6;
+  background: rgba(var(--primary-rgb-p), 0.14);
+  color: var(--primary-400-p);
   display: grid;
   place-items: center;
-  border: 1px solid rgba(176, 234, 248, 0.9);
+  border: 1px solid var(--primary-200-p);
 }
 
 .copilot-badge svg {
@@ -1821,7 +2078,253 @@ onBeforeUnmount(() => {
 .copilot-body {
   flex: 1;
   overflow-y: auto;
-  padding: 14px;
+  padding: 16px;
+}
+
+.copilot-tab-shell {
+  margin-bottom: 18px;
+  display: grid;
+  gap: 12px;
+}
+
+.copilot-tab-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.copilot-tab-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: #2b3d56;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.copilot-tab-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--primary-400-p);
+  flex-shrink: 0;
+}
+
+.copilot-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 6px;
+  border-radius: 22px;
+  background: rgba(243, 245, 250, 0.82);
+  border: 1px solid rgba(223, 227, 239, 0.95);
+}
+
+.copilot-tab {
+  flex: 1;
+  border: 0;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: transparent;
+  color: #8a97a9;
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+
+.copilot-tab.active {
+  background: #ffffff;
+  color: var(--primary-400-p);
+  box-shadow: 0 10px 20px rgba(103, 100, 240, 0.16);
+  transform: translateY(-1px);
+}
+
+.copilot-recommendation-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.copilot-recommendation-count {
+  color: #6d7d92;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.copilot-refresh {
+  border: 0;
+  background: transparent;
+  color: var(--primary-400-p);
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.copilot-recommendation-list {
+  display: grid;
+  gap: 14px;
+}
+
+.copilot-recommendation-card {
+  position: relative;
+  padding: 18px;
+  border: 1px solid #e1e0fb;
+  border-radius: 28px;
+  background: #ffffff;
+  box-shadow: 0 14px 28px rgba(36, 50, 71, 0.06);
+  overflow: hidden;
+}
+
+.copilot-recommendation-card::after {
+  content: '';
+  position: absolute;
+  top: -38px;
+  right: -38px;
+  width: 120px;
+  height: 120px;
+  border-radius: 999px;
+  background: rgba(var(--primary-rgb-p), 0.06);
+  transition: transform 0.35s ease;
+}
+
+.copilot-recommendation-card:hover::after {
+  transform: scale(1.25);
+}
+
+.copilot-recommendation-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.copilot-chip-index {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--primary-50-p);
+  color: var(--primary-400-p);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.copilot-chip-index.tertiary {
+  background: var(--tertiary-50-p);
+  color: var(--tertiary-500-p);
+}
+
+.copilot-chip-index.yellow {
+  background: var(--yellow-50-p);
+  color: #c39200;
+}
+
+.copilot-use-icon,
+.copilot-question-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.copilot-recommendation-text {
+  margin: 0;
+  color: #1f2a52;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.7;
+  min-height: 4.5rem;
+}
+
+.copilot-use-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  width: 100%;
+  margin-top: 18px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #706df4 0%, #635cf1 100%);
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 900;
+  cursor: pointer;
+  transition:
+    transform 0.15s ease,
+    filter 0.15s ease;
+}
+
+.copilot-use-button:hover {
+  filter: brightness(1.03);
+  transform: translateY(-1px);
+}
+
+.copilot-step-panel {
+  background: #fbf3d2;
+  border-radius: 24px;
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.copilot-step-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  display: flex;
+  align-items: center;
+  text-align: left;
+  background: #ffffff;
+  border: 0;
+  border-radius: 16px;
+  padding: 14px 16px;
+  cursor: pointer;
+  box-shadow: 0 10px 18px rgba(241, 208, 70, 0.08);
+}
+
+.copilot-step-number {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 8px;
+  background: var(--yellow-500-p);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 900;
+  box-shadow: 0 6px 12px rgba(241, 208, 70, 0.18);
+}
+
+.copilot-step-text {
+  color: #334155;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.copilot-section-icon-lucide {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--primary-400-p);
+}
+
+.copilot-section-icon-lucide.muted {
+  color: #7a879b;
+}
+
+.copilot-section-icon-lucide.yellow {
+  color: #c39200;
 }
 
 .copilot-section {
@@ -1867,8 +2370,8 @@ onBeforeUnmount(() => {
 }
 
 .copilot-metrics {
-  background: rgba(248, 250, 252, 1);
-  border: 1px solid rgba(232, 242, 252, 1);
+  background: rgba(255, 255, 255, 1);
+  border: 1px solid var(--primary-200-p);
   border-radius: 16px;
   padding: 14px;
   display: grid;
@@ -1891,7 +2394,7 @@ onBeforeUnmount(() => {
   padding: 4px 10px;
   border-radius: 999px;
   border: 1px solid transparent;
-  background: rgba(223, 233, 245, 0.7);
+  background: rgba(var(--primary-rgb-p), 0.1);
   color: #5f7188;
 }
 
@@ -1948,7 +2451,7 @@ onBeforeUnmount(() => {
 }
 
 .copilot-progress-score {
-  color: #15a0c6;
+  color: var(--primary-400-p);
 }
 
 .copilot-progress-bar {
@@ -1960,12 +2463,12 @@ onBeforeUnmount(() => {
 
 .copilot-progress-fill {
   height: 100%;
-  background: rgba(21, 160, 198, 1);
+  background: var(--primary-400-p);
 }
 
 .copilot-hint {
   padding-top: 10px;
-  border-top: 1px solid rgba(226, 232, 240, 0.8);
+  border-top: 1px solid var(--primary-200-p);
   color: rgba(95, 113, 136, 0.95);
   font-weight: 400;
   font-size: 16px;
@@ -1984,7 +2487,7 @@ onBeforeUnmount(() => {
 
 .copilot-suggestion {
   text-align: left;
-  border: 1px solid rgba(221, 234, 247, 1);
+  border: 1px solid var(--primary-200-p);
   background: #ffffff;
   border-radius: 16px;
   padding: 14px;
@@ -1995,7 +2498,7 @@ onBeforeUnmount(() => {
 }
 
 .copilot-suggestion:hover {
-  border-color: rgba(176, 234, 248, 1);
+  border-color: rgba(var(--primary-rgb-p), 0.35);
   transform: translateY(-1px);
 }
 
@@ -2013,8 +2516,8 @@ onBeforeUnmount(() => {
   gap: 6px;
   padding: 8px 10px;
   border-radius: 12px;
-  background: rgba(190, 242, 255, 0.55);
-  color: #15a0c6;
+  background: rgba(var(--primary-rgb-p), 0.12);
+  color: var(--primary-400-p);
   font-weight: 400;
   font-size: 16px;
 }
@@ -2037,9 +2540,9 @@ onBeforeUnmount(() => {
 }
 
 .copilot-secondary:hover {
-  border-color: rgba(176, 234, 248, 1);
-  color: #15a0c6;
-  background: rgba(248, 250, 252, 1);
+  border-color: rgba(var(--primary-rgb-p), 0.35);
+  color: var(--primary-400-p);
+  background: rgba(var(--primary-rgb-p), 0.06);
 }
 
 .copilot-kb {
@@ -2053,8 +2556,8 @@ onBeforeUnmount(() => {
   border: 0;
   padding: 10px 12px;
   border-radius: 0 12px 12px 0;
-  background: rgba(248, 250, 252, 1);
-  border-left: 2px solid rgba(195, 206, 218, 1);
+  background: rgba(255, 255, 255, 1);
+  border-left: 2px solid var(--primary-200-p);
   color: rgba(95, 113, 136, 0.95);
   font-weight: 700;
   font-size: 16px;
@@ -2062,13 +2565,13 @@ onBeforeUnmount(() => {
 }
 
 .copilot-kb-item:hover {
-  background: rgba(241, 245, 249, 1);
+  background: rgba(var(--primary-rgb-p), 0.06);
 }
 
 .copilot-footer {
   padding: 12px 14px;
-  border-top: 1px solid rgba(232, 242, 252, 1);
-  background: rgba(248, 250, 252, 0.9);
+  border-top: 1px solid var(--primary-200-p);
+  background: rgba(255, 255, 255, 0.9);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -2100,7 +2603,7 @@ onBeforeUnmount(() => {
 .copilot-dev-button {
   border: 0;
   background: transparent;
-  color: rgba(21, 160, 198, 1);
+  color: var(--primary-400-p);
   font-weight: 1000;
   font-size: 16px;
   cursor: pointer;
@@ -2117,8 +2620,8 @@ onBeforeUnmount(() => {
 .sidebar-human-card {
   padding: 18px 16px 16px;
   border-radius: 22px;
-  border: 1px solid rgba(255, 193, 143, 0.7);
-  background: rgba(255, 246, 238, 1);
+  border: 1px solid rgba(var(--primary-rgb-p), 0.22);
+  background: rgba(var(--primary-rgb-p), 0.06);
   text-align: center;
   box-shadow: none;
 }
@@ -2131,8 +2634,8 @@ onBeforeUnmount(() => {
   display: grid;
   place-items: center;
   background: #fff;
-  border: 1px solid rgba(255, 193, 143, 0.55);
-  color: #ff7a1a;
+  border: 1px solid var(--primary-200-p);
+  color: var(--primary-400-p);
   box-shadow: none;
 }
 
@@ -2144,14 +2647,14 @@ onBeforeUnmount(() => {
 .human-title {
   font-weight: 900;
   font-size: 16px;
-  color: #7a2f00;
+  color: var(--primary-500-p);
   margin-bottom: 6px;
 }
 
 .human-desc {
   font-size: 16px;
   font-weight: 700;
-  color: #ff7a1a;
+  color: var(--primary-400-p);
   line-height: 1.6;
   margin: 0 auto 12px;
   max-width: 240px;
@@ -2162,9 +2665,9 @@ onBeforeUnmount(() => {
   border: 0;
   cursor: pointer;
   padding: 12px 14px;
-  border-radius: 16px;
+  border-radius: 999px;
   color: #fff;
-  background: linear-gradient(180deg, #ff8a2a 0%, #ff6f00 100%);
+  background: linear-gradient(180deg, #9a86ff 0%, #6f58f7 100%);
   font-weight: 900;
   letter-spacing: 0.04em;
   box-shadow: none;
@@ -2196,7 +2699,7 @@ onBeforeUnmount(() => {
   width: 6px;
   height: 26px;
   border-radius: 999px;
-  background: #1f6fd8;
+  background: var(--primary-400-p);
 }
 
 .common-links {
@@ -2206,7 +2709,7 @@ onBeforeUnmount(() => {
 }
 
 .common-link {
-  border: 1px solid rgba(225, 235, 246, 1);
+  border: 1px solid var(--primary-200-p);
   background: rgba(255, 255, 255, 0.95);
   border-radius: 18px;
   padding: 16px 12px 14px;
@@ -2220,7 +2723,7 @@ onBeforeUnmount(() => {
 }
 
 .common-link:hover {
-  border-color: rgba(140, 184, 233, 0.9);
+  border-color: rgba(var(--primary-rgb-p), 0.35);
   transform: translateY(-1px);
 }
 
@@ -2230,11 +2733,31 @@ onBeforeUnmount(() => {
   border-radius: 999px;
   display: grid;
   place-items: center;
-  background: #f2f7ff;
-  color: #1f6fd8;
+  background: var(--primary-100-p);
+  color: var(--primary-400-p);
   transition: transform 0.15s ease;
   transform-origin: center;
   will-change: transform;
+}
+
+.common-link-icon[data-icon='user'] {
+  background: rgba(103, 100, 240, 0.12);
+  color: var(--color-primary-400);
+}
+
+.common-link-icon[data-icon='doc'] {
+  background: rgba(83, 177, 205, 0.12);
+  color: var(--color-tertiary-500);
+}
+
+.common-link-icon[data-icon='pin'] {
+  background: rgba(241, 208, 70, 0.16);
+  color: var(--color-yellow-500);
+}
+
+.common-link-icon[data-icon='pulse'] {
+  background: rgba(31, 42, 82, 0.08);
+  color: var(--color-darkblue-500);
 }
 
 .common-link:hover .common-link-icon {
@@ -2282,9 +2805,9 @@ onBeforeUnmount(() => {
 }
 
 .hot-item:hover {
-  background: rgba(31, 111, 216, 0.08);
-  border-color: rgba(168, 206, 248, 0.7);
-  color: #1f6fd8;
+  background: rgba(var(--primary-rgb-p), 0.08);
+  border-color: rgba(var(--primary-rgb-p), 0.28);
+  color: var(--primary-400-p);
 }
 
 .hot-dot {
@@ -2297,16 +2820,16 @@ onBeforeUnmount(() => {
 }
 
 .hot-item:hover .hot-dot {
-  background: rgba(31, 111, 216, 0.55);
+  background: rgba(var(--primary-rgb-p), 0.55);
 }
 
 .hotline-card {
   margin-top: 18px;
   padding: 16px 16px 14px;
   border-radius: 20px;
-  border: 1px solid rgba(168, 206, 248, 0.7);
-  background: rgba(31, 111, 216, 0.06);
-  color: #1d4f86;
+  border: 1px solid rgba(var(--primary-rgb-p), 0.28);
+  background: rgba(var(--primary-rgb-p), 0.06);
+  color: var(--primary-500-p);
 }
 
 .hotline-head {
@@ -2314,7 +2837,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 10px;
   font-weight: 900;
-  color: #1d4f86;
+  color: var(--primary-500-p);
   margin-bottom: 6px;
 }
 
@@ -2327,7 +2850,7 @@ onBeforeUnmount(() => {
   font-size: 28px;
   font-weight: 1000;
   letter-spacing: 0.02em;
-  color: #0c4e8f;
+  color: var(--primary-500-p);
   margin-bottom: 4px;
 }
 
@@ -2363,7 +2886,7 @@ onBeforeUnmount(() => {
   padding: 10px 14px;
   color: #5f7188;
   background: rgba(255, 255, 255, 0.7);
-  border: 1px solid #dfebf6;
+  border: 1px solid var(--primary-200-p);
   border-radius: 999px;
   box-shadow: 0 6px 18px rgba(36, 50, 71, 0.04);
   font-size: 16px;
@@ -2383,13 +2906,13 @@ onBeforeUnmount(() => {
 
 .avatar-agent {
   background: #fff;
-  border: 1px solid #d8e8f8;
+  border: 1px solid var(--primary-200-p);
 }
 
 .avatar-user {
   align-self: flex-end;
-  background: #ffd9c2;
-  border: 1px solid #ffd0b1;
+  background: var(--primary-50-p);
+  border: 1px solid var(--primary-200-p);
 }
 
 .avatar-image {
@@ -2447,12 +2970,12 @@ onBeforeUnmount(() => {
   color: #445266;
   background: rgba(255, 255, 255, 0.96);
   border-bottom-left-radius: 4px;
-  border: 1px solid #e3eef9;
+  border: 1px solid var(--primary-200-p);
 }
 
 .bubble-user {
   color: #fff;
-  background: linear-gradient(180deg, #2464a6 0%, #1d558f 100%);
+  background: linear-gradient(180deg, var(--primary-400-p) 0%, var(--primary-500-p) 100%);
   border-bottom-right-radius: 4px;
 }
 
@@ -2578,14 +3101,14 @@ onBeforeUnmount(() => {
   border-radius: 18px;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.98);
-  border: 1px solid rgba(221, 234, 247, 1);
+  border: 1px solid var(--primary-200-p);
   box-shadow: none;
 }
 
 .ai-card-hero {
   height: 124px;
-  background: rgba(243, 248, 255, 1);
-  border-bottom: 1px solid rgba(232, 242, 252, 1);
+  background: var(--primary-100-p);
+  border-bottom: 1px solid var(--primary-200-p);
   display: grid;
   place-items: center;
 }
@@ -2603,7 +3126,7 @@ onBeforeUnmount(() => {
   display: grid;
   place-items: center;
   gap: 8px;
-  color: #1f6fd8;
+  color: var(--primary-400-p);
 }
 
 .ai-card-hero-fallback[data-icon='pulse'] {
@@ -2619,7 +3142,7 @@ onBeforeUnmount(() => {
   height: 44px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.96);
-  border: 1px solid rgba(229, 238, 250, 1);
+  border: 1px solid var(--primary-200-p);
   display: grid;
   place-items: center;
 }
@@ -2636,11 +3159,11 @@ onBeforeUnmount(() => {
 }
 
 .ai-card-titlebar {
-  background: #0c5da7;
+  background: linear-gradient(180deg, #7f78ff 0%, #6764f0 100%);
   padding: 10px 14px;
   font-weight: 1000;
   color: #ffffff;
-  border-bottom: 1px solid rgba(12, 93, 167, 0.55);
+  border-bottom: 1px solid rgba(103, 100, 240, 0.55);
 }
 
 .ai-card-links {
@@ -2657,7 +3180,7 @@ onBeforeUnmount(() => {
   padding: 13px 14px;
   background: transparent;
   border: 0;
-  border-bottom: 1px solid rgba(232, 242, 252, 1);
+  border-bottom: 1px solid var(--primary-200-p);
   border-radius: 0;
   cursor: pointer;
   color: #5f7188;
@@ -2671,8 +3194,8 @@ onBeforeUnmount(() => {
 }
 
 .ai-card-link:hover {
-  background: rgba(31, 111, 216, 0.06);
-  color: #1f6fd8;
+  background: rgba(var(--primary-rgb-p), 0.06);
+  color: var(--primary-400-p);
 }
 
 .ai-card-link:last-child {
@@ -2732,7 +3255,7 @@ onBeforeUnmount(() => {
 }
 
 .status-read {
-  color: #005495;
+  color: var(--primary-500-p);
 }
 
 .status-sent {
@@ -2743,7 +3266,7 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
   padding: 16px;
   background: rgba(255, 255, 255, 0.98);
-  border-top: 1px solid #e6edf5;
+  border-top: 1px solid var(--primary-200-p);
   box-shadow: 0 -10px 24px rgba(30, 60, 90, 0.05);
 }
 
@@ -2775,7 +3298,7 @@ onBeforeUnmount(() => {
   padding: 6px;
   border: 1px solid transparent;
   border-radius: 14px;
-  background: #f8fbfe;
+  background: var(--primary-100-p);
   cursor: pointer;
   transition:
     transform 0.18s ease,
@@ -2785,8 +3308,8 @@ onBeforeUnmount(() => {
 }
 
 .sticker-button:hover {
-  background: #f2f7fc;
-  border-color: #dbe7f4;
+  background: var(--primary-100-p);
+  border-color: var(--primary-200-p);
   box-shadow: 0 10px 18px rgba(48, 79, 115, 0.08);
   transform: translateY(-1px);
 }
@@ -2901,7 +3424,7 @@ onBeforeUnmount(() => {
 }
 
 .feedback-cancel {
-  color: #005495;
+  color: var(--primary-500-p);
   background: transparent;
   border: 0;
   font-size: 16px;
@@ -2947,12 +3470,11 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
   padding: 16px;
   background: rgba(255, 255, 255, 0.98);
-  border-top: 1px solid #edf3f8;
+  border-top: 1px solid var(--primary-200-p);
   box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.03);
 }
 
 .sales-footer .quick-replies-header span:first-child,
-.sales-footer .quick-replies-header span:last-child,
 .sales-footer .quick-reply-chip {
   font-size: 16px;
 }
@@ -2964,8 +3486,8 @@ onBeforeUnmount(() => {
 .quick-replies {
   margin-bottom: 12px;
   padding: 12px;
-  background: linear-gradient(180deg, rgba(236, 244, 252, 0.95) 0%, rgba(247, 250, 253, 0.95) 100%);
-  border: 1px solid #deebf7;
+  background: linear-gradient(180deg, rgba(103, 100, 240, 0.12) 0%, rgba(255, 255, 255, 0.95) 100%);
+  border: 1px solid var(--primary-200-p);
   border-radius: 18px;
   transition: padding 0.18s ease;
   position: relative;
@@ -2982,7 +3504,7 @@ onBeforeUnmount(() => {
   width: 44px;
   height: 44px;
   padding: 0;
-  color: #7290af;
+  color: var(--primary-400-p);
   background: transparent;
   border: 0;
   border-radius: 999px;
@@ -3001,19 +3523,19 @@ onBeforeUnmount(() => {
   height: 32px;
   transform: translate(-50%, -50%);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid #d8e5f2;
+  background: var(--primary-100-p);
+  border: 1px solid var(--primary-200-p);
   box-shadow: 0 6px 14px rgba(74, 100, 126, 0.05);
 }
 
 .quick-replies-toggle:hover {
-  color: #456786;
+  color: var(--primary-500-p);
   transform: translateY(-1px);
 }
 
 .quick-replies-toggle:hover::before {
-  border-color: #bdd3ea;
-  box-shadow: 0 10px 18px rgba(53, 93, 134, 0.1);
+  border-color: var(--primary-300-p);
+  box-shadow: 0 10px 18px rgba(var(--primary-rgb-p), 0.1);
 }
 
 .quick-replies-toggle-icon {
@@ -3036,16 +3558,18 @@ onBeforeUnmount(() => {
 }
 
 .quick-replies-header span:first-child {
-  color: #3d5e7f;
+  color: var(--primary-500-p);
   font-size: 16px;
   font-weight: 800;
   letter-spacing: 0.04em;
 }
 
-.quick-replies-header span:last-child {
-  color: #87a0bc;
-  font-size: 16px;
-  font-weight: 700;
+.quick-replies-tools .quick-replies-note {
+  color: #5f7188 !important;
+  font-size: 13px !important;
+  font-weight: 400 !important;
+  letter-spacing: 0 !important;
+  opacity: 0.92 !important;
 }
 
 .quick-replies-right {
@@ -3068,14 +3592,18 @@ onBeforeUnmount(() => {
 }
 
 .quick-reply-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
   padding: 9px 12px;
-  color: #43607d;
+  color: #5f7188;
   background: #ffffff;
-  border: 1px solid #d8e5f2;
+  border: 1px solid var(--primary-200-p);
   border-radius: 999px;
   box-shadow: 0 6px 14px rgba(74, 100, 126, 0.05);
   font-size: 16px;
   font-weight: 400;
+  text-align: left;
   cursor: pointer;
   transition:
     transform 0.18s ease,
@@ -3084,9 +3612,10 @@ onBeforeUnmount(() => {
 }
 
 .quick-reply-chip:hover {
-  border-color: #bdd3ea;
-  box-shadow: 0 10px 18px rgba(53, 93, 134, 0.1);
+  border-color: var(--primary-300-p);
+  box-shadow: 0 10px 18px rgba(103, 100, 240, 0.1);
   transform: translateY(-1px);
+  color: #6764f0;
 }
 
 .composer {
@@ -3108,11 +3637,11 @@ onBeforeUnmount(() => {
   z-index: 12;
   min-width: 250px;
   padding: 8px 10px;
-  color: #6f7f93;
+  color: var(--primary-500-p);
   background: rgba(255, 255, 255, 0.97);
-  border: 1px solid #dbe6f3;
+  border: 1px solid var(--primary-200-p);
   border-radius: 12px;
-  box-shadow: 0 10px 24px rgba(53, 93, 134, 0.12);
+  box-shadow: 0 10px 24px rgba(var(--primary-rgb-p), 0.12);
   font-size: 16px;
   font-weight: 700;
   line-height: 1.5;
@@ -3132,8 +3661,8 @@ onBeforeUnmount(() => {
   width: 10px;
   height: 10px;
   background: #ffffff;
-  border-right: 1px solid #dbe6f3;
-  border-bottom: 1px solid #dbe6f3;
+  border-right: 1px solid var(--primary-200-p);
+  border-bottom: 1px solid var(--primary-200-p);
   transform: rotate(45deg) translateY(-6px);
 }
 
@@ -3171,7 +3700,7 @@ onBeforeUnmount(() => {
 
 .icon-button:hover,
 .icon-button.active {
-  color: #005495;
+  color: var(--primary-500-p);
 }
 
 .subtle-button {
@@ -3188,7 +3717,7 @@ onBeforeUnmount(() => {
   align-items: center;
   min-height: 42px;
   padding: 10px 18px;
-  background: #eef2f7;
+  background: var(--primary-100-p);
   border: 1px solid transparent;
   border-radius: 999px;
   transition:
@@ -3198,7 +3727,7 @@ onBeforeUnmount(() => {
 
 .input-shell:focus-within {
   background: #fff;
-  border-color: #cfe2f4;
+  border-color: var(--primary-200-p);
 }
 
 .input-shell input {
@@ -3222,8 +3751,21 @@ onBeforeUnmount(() => {
   color: #c4cad3;
 }
 
+.draft-audio-button {
+  color: #97a0ad;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.draft-audio-button:hover,
+.draft-audio-button.active {
+  color: var(--primary-500-p);
+  background: transparent;
+}
+
 .send-button:not(:disabled) {
-  color: #005495;
+  color: var(--primary-500-p);
   transform: scale(1.08);
 }
 
@@ -3253,7 +3795,7 @@ onBeforeUnmount(() => {
 
   .chat-header {
     text-align: left;
-    padding: 14px 16px 18px;
+    padding: 18px 16px 20px;
   }
 
   .fixed-watermark img {
@@ -3262,7 +3804,7 @@ onBeforeUnmount(() => {
   }
 
   .chat-header h1 {
-    font-size: 18px;
+    font-size: 16px;
     letter-spacing: 0.02em;
     margin-left: 8px;
   }
@@ -3276,18 +3818,27 @@ onBeforeUnmount(() => {
   }
 
   .quick-replies-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .quick-replies-header > span:first-child {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    font-size: 14px;
   }
 
   .quick-replies-right {
-    width: 100%;
-    justify-content: space-between;
+    width: auto;
+    flex-shrink: 0;
+    justify-content: flex-end;
   }
 
   .quick-replies-tools {
-    flex-wrap: wrap;
+    display: none;
   }
 }
 </style>
