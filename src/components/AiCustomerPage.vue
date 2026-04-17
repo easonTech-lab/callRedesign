@@ -64,7 +64,7 @@ const userAvatar = withBase('/avatars/frame-8.svg');
 const promoVideos = [
   {
     id: 'ODCj2sh9RW0',
-    title: '桃園觀光形象影片',
+    title: '新竹觀光形象影片',
     subtitle: 'YouTube 廣告'
   },
   {
