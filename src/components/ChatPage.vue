@@ -360,7 +360,6 @@ const quickReplies = [
 const agentAvatar = withBase('/stickers/pika-happy.png');
 const userAvatar = withBase('/avatars/frame-8.svg');
 const canSend = computed(() => inputText.value.trim().length > 0);
-const speakingDraft = ref(false);
 const quickRepliesCollapsed = ref(false);
 
 const serviceCards = [
@@ -423,50 +422,6 @@ const copilotQuality = computed(() => {
 const scrollToBottom = async () => {
   await nextTick();
   chatEndRef.value?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-};
-
-const normalizeSpeechText = (text) =>
-  (text ?? '')
-    .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/^\s*#{1,6}\s+/gm, '')
-    .replace(/\*\*(.*?)\*\*/g, '$1')
-    .replace(/\*(.*?)\*/g, '$1')
-    .replace(/^\s*[-•]\s+/gm, '')
-    .replace(/^\s*\d+\.\s+/gm, '')
-    .replace(/\n+/g, '。')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-const playDraftAudio = () => {
-  const speechText = normalizeSpeechText(inputText.value);
-
-  if (!window.speechSynthesis || !speechText) {
-    return;
-  }
-
-  if (speakingDraft.value && window.speechSynthesis.speaking) {
-    window.speechSynthesis.cancel();
-    speakingDraft.value = false;
-    return;
-  }
-
-  window.speechSynthesis.cancel();
-
-  const utterance = new SpeechSynthesisUtterance(speechText);
-  utterance.lang = 'zh-TW';
-  utterance.rate = 0.95;
-  utterance.pitch = 1;
-  utterance.onstart = () => {
-    speakingDraft.value = true;
-  };
-  utterance.onend = () => {
-    speakingDraft.value = false;
-  };
-  utterance.onerror = () => {
-    speakingDraft.value = false;
-  };
-
-  window.speechSynthesis.speak(utterance);
 };
 
 const updateServiceMetrics = () => {
@@ -838,9 +793,6 @@ onBeforeUnmount(() => {
     clearTimeout(readStatusTimer);
   }
 
-  window.speechSynthesis?.cancel?.();
-  speakingDraft.value = false;
-
   window.removeEventListener('resize', updateServiceMetrics);
   window.removeEventListener('keydown', handleGlobalKeydown);
 
@@ -1201,39 +1153,6 @@ onBeforeUnmount(() => {
                 @keydown.enter="sendMessage"
               />
             </div>
-
-            <button
-              type="button"
-              class="icon-button draft-audio-button"
-              :class="{ active: speakingDraft }"
-              :disabled="!canSend"
-              :aria-label="speakingDraft ? '停止朗讀' : '朗讀草稿'"
-              @click="playDraftAudio"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true" class="toolbar-icon">
-                <path
-                  d="M11 5.8 7.8 8.5H5.5A1.5 1.5 0 0 0 4 10v4a1.5 1.5 0 0 0 1.5 1.5h2.3L11 18.2V5.8Z"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                  stroke-linejoin="round"
-                />
-                <path
-                  d="M14.8 8.6a4.2 4.2 0 0 1 0 6.8"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                  stroke-linecap="round"
-                />
-                <path
-                  d="M16.8 6.6a7 7 0 0 1 0 10.8"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                  stroke-linecap="round"
-                />
-              </svg>
-            </button>
 
             <button
               type="button"
@@ -3749,19 +3668,6 @@ onBeforeUnmount(() => {
   padding: 0;
   font-size: 24px;
   color: #c4cad3;
-}
-
-.draft-audio-button {
-  color: #97a0ad;
-  background: transparent;
-  border: 0;
-  box-shadow: none;
-}
-
-.draft-audio-button:hover,
-.draft-audio-button.active {
-  color: var(--primary-500-p);
-  background: transparent;
 }
 
 .send-button:not(:disabled) {

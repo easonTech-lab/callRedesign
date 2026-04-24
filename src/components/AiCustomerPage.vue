@@ -17,37 +17,6 @@ const getTime = () =>
     hour12: false
   });
 
-const categories = [
-  {
-    id: 'social',
-    title: '社會福利諮詢',
-    iconSrc: withBase('/category-icons/1-03.png'),
-    color: '#2b3440',
-    items: ['長照服務申請', '身心障礙補助', '高齡友善設施', '急難救助指引']
-  },
-  {
-    id: 'env',
-    title: '環境與交通報修',
-    iconSrc: withBase('/category-icons/1-01.png'),
-    color: '#2b3440',
-    items: ['路燈故障反應', '大型廢棄物清運', '違規停車反應', '公車動態查詢']
-  },
-  {
-    id: 'urban',
-    title: '都市發展建設',
-    iconSrc: withBase('/category-icons/1-02.png'),
-    color: '#2b3440',
-    items: ['建築許可查詢', '土地使用分區', '公共工程資訊', '住宅補貼申請']
-  },
-  {
-    id: 'civil',
-    title: '民政與公共服務',
-    iconSrc: withBase('/category-icons/1-04.png'),
-    color: '#2b3440',
-    items: ['役政資訊諮詢', '法律諮詢預約', '市政活動報名', '各區公所資訊']
-  }
-];
-
 const stickers = [
   { id: 'front', name: '皮卡正面', src: withBase('/stickers/pika-front.png') },
   { id: 'back', name: '皮卡背面', src: withBase('/stickers/pika-back.png') },
@@ -87,11 +56,9 @@ const messages = ref([
   }
 ]);
 const isTyping = ref(false);
-const showMenu = ref(false);
 const showStickers = ref(false);
 const showFeedbackModal = ref(false);
 const feedbackSubmitted = ref(false);
-const hoveredItemId = ref(null);
 const uploadError = ref('');
 const chatEndRef = ref(null);
 const fileInputRef = ref(null);
@@ -103,7 +70,6 @@ let readStatusTimer = null;
 
 const canSend = computed(() => inputText.value.trim().length > 0);
 const speakingMessageId = ref(null);
-const speakingDraft = ref(false);
 
 const responseMap = {
   '育兒津貼申請流程': {
@@ -236,38 +202,6 @@ const playMessageAudio = (message) => {
   window.speechSynthesis.speak(utterance);
 };
 
-const playDraftAudio = () => {
-  const speechText = normalizeSpeechText(inputText.value);
-
-  if (!window.speechSynthesis || !speechText) {
-    return;
-  }
-
-  if (speakingDraft.value && window.speechSynthesis.speaking) {
-    window.speechSynthesis.cancel();
-    speakingDraft.value = false;
-    return;
-  }
-
-  window.speechSynthesis.cancel();
-
-  const utterance = new SpeechSynthesisUtterance(speechText);
-  utterance.lang = 'zh-TW';
-  utterance.rate = 0.95;
-  utterance.pitch = 1;
-  utterance.onstart = () => {
-    speakingDraft.value = true;
-  };
-  utterance.onend = () => {
-    speakingDraft.value = false;
-  };
-  utterance.onerror = () => {
-    speakingDraft.value = false;
-  };
-
-  window.speechSynthesis.speak(utterance);
-};
-
 const appendMessage = (message) => {
   messages.value = [...messages.value, message];
   void scrollToBottom();
@@ -357,7 +291,6 @@ const submitText = (rawText) => {
   });
 
   inputText.value = '';
-  showMenu.value = false;
   showStickers.value = false;
   simulateAiResponse(trimmed);
   setReadStatusLater();
@@ -372,10 +305,6 @@ const sendMessage = () => {
 };
 
 const sendSuggestedPrompt = (text) => {
-  submitText(text);
-};
-
-const sendCategoryItem = (text) => {
   submitText(text);
 };
 
@@ -476,21 +405,9 @@ const handleFeedback = () => {
   }, 1800);
 };
 
-const toggleMenu = () => {
-  showMenu.value = !showMenu.value;
-};
-
-const closeMenu = () => {
-  showMenu.value = false;
-};
-
 const handleGlobalKeydown = (event) => {
   if (event.key !== 'Escape') {
     return;
-  }
-
-  if (showMenu.value) {
-    showMenu.value = false;
   }
 
   if (showStickers.value) {
@@ -526,7 +443,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="app-shell" :class="{ 'menu-open': showMenu }">
+  <div class="app-shell">
     <header class="chat-header">
       <button type="button" class="end-chat-button" @click="openFeedbackModal">結束對話</button>
       <h1>{{ title }}</h1>
@@ -648,39 +565,6 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
 
-                <button
-                  v-if="msg.sender === 'agent' && msg.type === 'text'"
-                  type="button"
-                  class="message-audio-button"
-                  :class="{ active: speakingMessageId === msg.id }"
-                  :aria-label="speakingMessageId === msg.id ? '停止朗讀' : '朗讀這則訊息'"
-                  @click="playMessageAudio(msg)"
-                >
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path
-                      d="M11 5.8 7.8 8.5H5.5A1.5 1.5 0 0 0 4 10v4a1.5 1.5 0 0 0 1.5 1.5h2.3L11 18.2V5.8Z"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="1.8"
-                      stroke-linejoin="round"
-                    />
-                    <path
-                      d="M14.8 8.6a4.2 4.2 0 0 1 0 6.8"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="1.8"
-                      stroke-linecap="round"
-                    />
-                    <path
-                      d="M16.8 6.6a7 7 0 0 1 0 10.8"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="1.8"
-                      stroke-linecap="round"
-                    />
-                  </svg>
-                </button>
-
                 <span v-if="msg.sender === 'agent' && msg.type !== 'intro'" class="message-time">{{ msg.time }}</span>
               </div>
 
@@ -769,20 +653,6 @@ onBeforeUnmount(() => {
 
         <footer ref="chatFooterRef" class="chat-footer">
           <div class="composer">
-            <button
-              type="button"
-              class="footer-menu-button"
-              :class="{ active: showMenu }"
-              :aria-label="showMenu ? '關閉選單' : '開啟選單'"
-              @click="toggleMenu"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true" class="footer-menu-icon">
-                <path d="M5 7h14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.9" />
-                <path d="M5 12h14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.9" />
-                <path d="M5 17h14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.9" />
-              </svg>
-            </button>
-
             <div class="upload-trigger">
               <button type="button" class="icon-button" aria-label="上傳附件" @click="triggerFileUpload">
                 <svg viewBox="0 0 24 24" aria-hidden="true" class="toolbar-icon">
@@ -843,39 +713,6 @@ onBeforeUnmount(() => {
 
             <button
               type="button"
-              class="icon-button draft-audio-button"
-              :class="{ active: speakingDraft }"
-              :aria-label="speakingDraft ? '停止朗讀輸入內容' : '朗讀輸入內容'"
-              :disabled="!inputText.trim()"
-              @click="playDraftAudio"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true" class="toolbar-icon">
-                <path
-                  d="M11 5.8 7.8 8.5H5.5A1.5 1.5 0 0 0 4 10v4a1.5 1.5 0 0 0 1.5 1.5h2.3L11 18.2V5.8Z"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-linejoin="round"
-                  stroke-width="1.8"
-                />
-                <path
-                  d="M14.8 8.6a4.2 4.2 0 0 1 0 6.8"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-linecap="round"
-                  stroke-width="1.8"
-                />
-                <path
-                  d="M16.8 6.6a7 7 0 0 1 0 10.8"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-linecap="round"
-                  stroke-width="1.8"
-                />
-              </svg>
-            </button>
-
-            <button
-              type="button"
               class="send-button"
               :disabled="!canSend || isTyping"
               aria-label="送出訊息"
@@ -889,73 +726,7 @@ onBeforeUnmount(() => {
         </footer>
       </section>
 
-      <aside class="quick-rail" aria-label="快速工具">
-        <button type="button" class="quick-rail-button" aria-label="開啟分類選單" @click="toggleMenu">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4.8 5.8h3.6v3.6H4.8zM10.2 5.8h3.6v3.6h-3.6zM15.6 5.8h3.6v3.6h-3.6zM4.8 11.2h3.6v3.6H4.8zM10.2 11.2h3.6v3.6h-3.6zM15.6 11.2h3.6v3.6h-3.6zM4.8 16.6h3.6v3.6H4.8zM10.2 16.6h3.6v3.6h-3.6zM15.6 16.6h3.6v3.6h-3.6z" fill="currentColor" />
-          </svg>
-        </button>
-        <button type="button" class="quick-rail-button" aria-label="回到底部" @click="scrollToBottom">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              d="M12 4.5v14.2"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.8"
-              stroke-linecap="round"
-            />
-            <path
-              d="M7.4 14.1 12 18.8l4.6-4.7"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.8"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-        </button>
-      </aside>
     </div>
-
-    <transition name="drawer-fade">
-      <div v-if="showMenu" class="menu-overlay" @click.self="closeMenu">
-        <div class="menu-drawer">
-          <button type="button" class="menu-close" aria-label="關閉選單" @click="closeMenu">✕</button>
-          <div class="menu-handle" aria-hidden="true"></div>
-
-          <div class="menu-grid">
-            <section v-for="category in categories" :key="category.id" class="menu-column">
-              <h3 class="menu-category-title" :style="{ color: category.color }">
-                <span class="menu-category-icon">
-                  <img :src="category.iconSrc" :alt="category.title" />
-                </span>
-                <span>{{ category.title }}</span>
-              </h3>
-              <div class="menu-items">
-                <button
-                  v-for="(item, index) in category.items"
-                  :key="`${category.id}-${index}`"
-                  type="button"
-                  class="menu-item"
-                  :class="{ hovered: hoveredItemId === `${category.id}-${index}` }"
-                  :style="{
-                    backgroundColor: hoveredItemId === `${category.id}-${index}` ? '#f0f0ff' : '#ffffff',
-                    borderColor: hoveredItemId === `${category.id}-${index}` ? '#b7b5f4' : '#d7d7fb',
-                    color: hoveredItemId === `${category.id}-${index}` ? '#6764f0' : '#2b3440'
-                  }"
-                  @mouseenter="hoveredItemId = `${category.id}-${index}`"
-                  @mouseleave="hoveredItemId = null"
-                  @click="sendCategoryItem(item)"
-                >
-                  <span>{{ item }}</span>
-                  <span class="menu-item-arrow">›</span>
-                </button>
-              </div>
-            </section>
-          </div>
-        </div>
-      </div>
-    </transition>
 
     <transition name="feedback-fade">
       <div v-if="showFeedbackModal" class="feedback-overlay">
@@ -1399,41 +1170,12 @@ onBeforeUnmount(() => {
   height: 22px;
 }
 
-.message-audio-button {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  flex-shrink: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 999px;
-  cursor: pointer;
-  background: #53b1cd;
-  color: #ffffff;
-  box-shadow: 0 8px 16px rgba(83, 177, 205, 0.24);
-  transition:
-    transform 0.15s ease,
-    filter 0.15s ease,
-    opacity 0.15s ease;
-}
-
-.message-audio-button svg {
-  width: 22px;
-  height: 22px;
-}
-
-.message-audio-button:hover,
 .intro-audio-button:hover {
   filter: brightness(1.04);
 }
-
-.message-audio-button.active,
 .intro-audio-button.active {
   background: #6764f0;
 }
-
-.message-audio-button:active,
 .intro-audio-button:active {
   transform: translateY(1px) scale(0.98);
 }
@@ -1740,7 +1482,6 @@ onBeforeUnmount(() => {
   gap: 12px;
 }
 
-.footer-menu-button,
 .icon-button,
 .send-button {
   display: grid;
@@ -1753,26 +1494,6 @@ onBeforeUnmount(() => {
     transform 0.2s ease,
     opacity 0.2s ease,
     background 0.2s ease;
-}
-
-.footer-menu-button {
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid #ffffff;
-  color: #8c89f1;
-}
-
-.footer-menu-button.active {
-  color: #6764f0;
-  transform: rotate(90deg);
-}
-
-.footer-menu-icon {
-  width: 24px;
-  height: 24px;
 }
 
 .upload-trigger {
@@ -1828,18 +1549,6 @@ onBeforeUnmount(() => {
   padding: 0;
   color: #97a0ad;
   border-radius: 999px;
-}
-
-.draft-audio-button {
-  background: transparent;
-  border: 0;
-  box-shadow: none;
-}
-
-.draft-audio-button:hover,
-.draft-audio-button.active {
-  color: #6764f0;
-  background: transparent;
 }
 
 .toolbar-icon {
@@ -1903,128 +1612,6 @@ onBeforeUnmount(() => {
 
 .send-button:disabled {
   cursor: not-allowed;
-}
-
-.menu-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  background: rgba(15, 23, 42, 0.28);
-  backdrop-filter: blur(3px);
-}
-
-.menu-drawer {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  max-height: min(90vh, 760px);
-  padding: 18px 20px 24px;
-  border-radius: 28px 28px 0 0;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 -20px 60px rgba(15, 23, 42, 0.16);
-  overflow-y: auto;
-}
-
-.menu-handle {
-  width: 56px;
-  height: 6px;
-  margin: 0 auto 16px;
-  border-radius: 999px;
-  background: #e3e7ff;
-}
-
-.menu-close {
-  position: absolute;
-  top: 14px;
-  right: 16px;
-  width: 44px;
-  height: 44px;
-  border: 0;
-  background: transparent;
-  color: #c1cee0;
-  font-size: 24px;
-  cursor: pointer;
-}
-
-.menu-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px 20px;
-}
-
-.menu-column {
-  display: grid;
-  gap: 12px;
-}
-
-.menu-category-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  font-size: 16px;
-  font-weight: 900;
-  letter-spacing: 0.02em;
-  color: #2b3440;
-}
-
-.menu-category-icon {
-  width: 40px;
-  height: 40px;
-  display: inline-grid;
-  place-items: center;
-  flex-shrink: 0;
-}
-
-.menu-category-icon img {
-  width: 40px;
-  height: 40px;
-  display: block;
-}
-
-.menu-items {
-  display: grid;
-  gap: 10px;
-}
-
-.menu-item {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-height: 54px;
-  padding: 12px 18px;
-  border: 1.5px solid #d7d7fb;
-  border-radius: 16px;
-  box-shadow: none;
-  cursor: pointer;
-  font-size: 16px;
-  font-weight: 800;
-  color: #2b3440;
-  transition:
-    transform 0.16s ease,
-    background 0.16s ease,
-    color 0.16s ease,
-    border-color 0.16s ease;
-}
-
-.menu-item:hover {
-  transform: translateY(-2px);
-}
-
-.menu-item.hovered {
-  background: #f0f0ff;
-  border-color: #b7b5f4;
-  color: #6764f0;
-}
-
-.menu-item-arrow {
-  flex-shrink: 0;
-  font-size: 18px;
-  line-height: 1;
-  opacity: 0.75;
 }
 
 .feedback-overlay {
@@ -2137,52 +1724,15 @@ onBeforeUnmount(() => {
   color: #34c759;
 }
 
-.quick-rail {
-  position: fixed;
-  right: 16px;
-  bottom: 94px;
-  z-index: 40;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 10px 8px;
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.98);
-  box-shadow: 0 16px 32px rgba(36, 50, 71, 0.12);
-  border: 1px solid #eef2fb;
-}
-
-.quick-rail-button {
-  display: grid;
-  place-items: center;
-  width: 48px;
-  height: 48px;
-  padding: 0;
-  border: 0;
-  border-radius: 999px;
-  background: #f5f6ff;
-  color: #6764f0;
-  cursor: pointer;
-}
-
-.quick-rail-button svg {
-  width: 22px;
-  height: 22px;
-}
-
 .feedback-fade-enter-active,
 .feedback-fade-leave-active,
-.drawer-fade-enter-active,
-.drawer-fade-leave-active,
 .panel-slide-enter-active,
 .panel-slide-leave-active {
   transition: opacity 0.24s ease;
 }
 
 .feedback-fade-enter-from,
-.feedback-fade-leave-to,
-.drawer-fade-enter-from,
-.drawer-fade-leave-to {
+.feedback-fade-leave-to {
   opacity: 0;
 }
 
@@ -2195,12 +1745,6 @@ onBeforeUnmount(() => {
 .panel-slide-leave-to {
   opacity: 0;
   transform: translateY(20px);
-}
-
-@media (min-width: 768px) {
-  .menu-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
 }
 
 @media (max-width: 768px) {
@@ -2231,26 +1775,6 @@ onBeforeUnmount(() => {
 
   .intro-panel {
     min-width: 0;
-  }
-
-  .quick-rail {
-    right: 10px;
-    bottom: 86px;
-    padding: 8px 6px;
-  }
-
-  .quick-rail-button {
-    width: 32px;
-    height: 32px;
-  }
-
-  .menu-drawer {
-    padding: 18px 16px 20px;
-  }
-
-  .menu-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 14px;
   }
 
   .composer {
