@@ -110,6 +110,7 @@ const serviceIndex = ref(0);
 const serviceViewportWidth = ref(0);
 const serviceMaxOffset = ref(0);
 const copilotMobileOpen = ref(false);
+const copilotHidden = ref(false);
 const activeTab = ref('formal');
 const copilotVariantIndex = ref(0);
 const copilotRefreshTick = ref(0);
@@ -651,6 +652,11 @@ const applyCopilotSuggestion = (text) => {
   }
 };
 
+const collapseAll = () => {
+  transcriptExpanded.value = false;
+  copilotHidden.value = true;
+};
+
 const regenerateCopilotSuggestions = () => {
   const variants = recommendationData[activeTab.value] ?? [];
   if (variants.length > 0) {
@@ -1101,23 +1107,28 @@ onBeforeUnmount(() => {
         </div>
       </aside>
 
-      <aside v-if="props.salesCopilot" class="copilot-sidebar">
-        <!-- Case bar -->
-        <div class="call-case-bar copilot-case-bar">
-          <button type="button" class="case-summary-btn">
-            <svg viewBox="0 0 24 24" aria-hidden="true" class="case-summary-icon">
-              <path d="M9 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
-              <path d="M9 13h6M9 17h4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-            </svg>
-            <span>目前問題摘要</span>
-          </button>
-          <span class="case-title-text">{{ caseTitle }}</span>
-        </div>
+      <!-- 收合時顯示的展開按鈕 -->
+      <button
+        v-if="props.salesCopilot && copilotHidden"
+        type="button"
+        class="copilot-show-btn"
+        aria-label="展開 AI 面板"
+        @click="copilotHidden = false"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M15 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
 
+      <aside v-if="props.salesCopilot" v-show="!copilotHidden" class="copilot-sidebar">
         <!-- Voice status mini section -->
         <div class="copilot-voice-mini">
           <div class="cvm-header">
-            <button type="button" class="cvm-expand-btn" @click="transcriptExpanded = !transcriptExpanded">
+            <button
+              type="button"
+              class="cvm-expand-btn"
+              @click="transcriptExpanded ? collapseAll() : (transcriptExpanded = true)"
+            >
               <template v-if="!transcriptExpanded">← 展開逐字稿</template>
               <template v-else>
                 收合
@@ -1131,10 +1142,27 @@ onBeforeUnmount(() => {
             <div class="cvm-title-area">
               <span class="cvm-live-badge">音轉字即時狀況</span>
             </div>
+            <button type="button" class="copilot-hide-btn" aria-label="隱藏 AI 面板" @click="collapseAll()">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
           </div>
           <div v-if="!transcriptExpanded" class="cvm-preview-row">
             <span class="cvm-preview-text">最後轉譯：{{ callTranscript[callTranscript.length - 1].speaker }}「{{ callTranscript[callTranscript.length - 1].text.slice(0, 18) }}...」</span>
           </div>
+        </div>
+
+        <!-- Case bar -->
+        <div class="call-case-bar copilot-case-bar">
+          <button type="button" class="case-summary-btn">
+            <svg viewBox="0 0 24 24" aria-hidden="true" class="case-summary-icon">
+              <path d="M9 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+              <path d="M9 13h6M9 17h4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+            </svg>
+            <span>目前問題摘要</span>
+          </button>
+          <span class="case-title-text">{{ caseTitle }}</span>
         </div>
 
         <div class="copilot-header">
@@ -1255,19 +1283,6 @@ onBeforeUnmount(() => {
                   </span>
                 </div>
                 <p class="copilot-recommendation-text">{{ item.content }}</p>
-                <button type="button" class="copilot-use-button" @click="applyCopilotSuggestion(item.content)">
-                  採用此版本
-                  <svg viewBox="0 0 24 24" aria-hidden="true" class="copilot-use-icon">
-                    <path
-                      d="m9 6 6 6-6 6"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="1.9"
-                    />
-                  </svg>
-                </button>
               </article>
             </div>
           </section>
@@ -2113,6 +2128,56 @@ onBeforeUnmount(() => {
   }
 }
 
+.copilot-hide-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  flex-shrink: 0;
+  background: #f1f3f8;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #6b7a90;
+  transition: background 0.15s ease;
+}
+
+.copilot-hide-btn:hover {
+  background: #e4e8f0;
+  color: #2b3d56;
+}
+
+.copilot-hide-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.copilot-show-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 100%;
+  flex-shrink: 0;
+  background: #f1f3f8;
+  border: none;
+  border-left: 1px solid #e8eef8;
+  cursor: pointer;
+  color: #6764f0;
+  transition: background 0.15s ease;
+}
+
+.copilot-show-btn:hover {
+  background: #eaeafd;
+}
+
+.copilot-show-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
 .copilot-sidebar {
   display: none;
   width: 520px;
@@ -2133,6 +2198,9 @@ onBeforeUnmount(() => {
   .copilot-sidebar {
     display: flex;
     flex-direction: column;
+  }
+  .copilot-show-btn {
+    display: flex;
   }
 }
 
