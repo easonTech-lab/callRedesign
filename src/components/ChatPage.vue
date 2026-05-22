@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import FeedbackSurveyModal from './FeedbackSurveyModal.vue';
 
 const props = defineProps({
   title: {
@@ -29,6 +30,16 @@ const props = defineProps({
 });
 
 const withBase = (path) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
+
+const fontSizeOptions = [
+  { value: 'large', label: '大' },
+  { value: 'medium', label: '中' },
+  { value: 'small', label: '小' }
+];
+
+const fontSizeStorageKey = 'chat-font-size';
+const fontSize = ref('medium');
+const fontSizeClass = computed(() => `font-size-${fontSize.value}`);
 
 const getTime = () =>
   new Date().toLocaleTimeString([], {
@@ -60,9 +71,9 @@ const buildInitialMessages = () => {
 const messages = ref(buildInitialMessages());
 const inputText = ref('');
 const showStickers = ref(false);
+const isRecording = ref(false);
 const uploadError = ref('');
 const showFeedbackModal = ref(false);
-const feedbackSubmitted = ref(false);
 const chatEndRef = ref(null);
 const fileInputRef = ref(null);
 const isAiMode = ref(props.customerAi);
@@ -70,6 +81,7 @@ const isTyping = ref(false);
 const serviceSliderRef = ref(null);
 const serviceTrackRef = ref(null);
 const chatFooterRef = ref(null);
+const stickersPanelRef = ref(null);
 const serviceCardWidth = ref(240);
 const serviceCanSlide = ref(false);
 const serviceIndex = ref(0);
@@ -649,23 +661,42 @@ const triggerFileUpload = () => {
   fileInputRef.value?.click();
 };
 
+let voiceRecognition = null;
+const toggleVoiceInput = () => {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { return; }
+
+  if (isRecording.value) {
+    voiceRecognition?.stop();
+    return;
+  }
+
+  voiceRecognition = new SR();
+  voiceRecognition.lang = 'zh-TW';
+  voiceRecognition.continuous = false;
+  voiceRecognition.interimResults = false;
+
+  voiceRecognition.onstart = () => { isRecording.value = true; };
+  voiceRecognition.onend = () => { isRecording.value = false; };
+  voiceRecognition.onerror = () => { isRecording.value = false; };
+  voiceRecognition.onresult = (e) => {
+    const transcript = e.results[0][0].transcript;
+    inputText.value += transcript;
+  };
+
+  voiceRecognition.start();
+};
+
 const openFeedbackModal = () => {
-  feedbackSubmitted.value = false;
   showFeedbackModal.value = true;
 };
 
 const closeFeedbackModal = () => {
   showFeedbackModal.value = false;
-  feedbackSubmitted.value = false;
 };
 
-const handleFeedback = (score) => {
-  console.log('User Feedback:', score);
-  feedbackSubmitted.value = true;
-
-  window.setTimeout(() => {
-    closeFeedbackModal();
-  }, 1800);
+const handleFeedback = (feedback) => {
+  console.log('User Feedback:', feedback);
 };
 
 const handleFileUpload = (event) => {
@@ -733,6 +764,16 @@ const handleGlobalKeydown = (event) => {
   }
 };
 
+const setFontSize = (value) => {
+  fontSize.value = value;
+
+  try {
+    window.localStorage.setItem(fontSizeStorageKey, value);
+  } catch {
+    // Ignore storage failures and keep the UI functional.
+  }
+};
+
 let copilotFooterResizeObserver = null;
 
 watch(
@@ -754,6 +795,15 @@ watch(isTyping, (typing) => {
 });
 
 onMounted(() => {
+  try {
+    const savedFontSize = window.localStorage.getItem(fontSizeStorageKey);
+    if (fontSizeOptions.some((option) => option.value === savedFontSize)) {
+      fontSize.value = savedFontSize;
+    }
+  } catch {
+    // Ignore storage failures and keep the UI functional.
+  }
+
   scrollToBottom();
   if (props.customerAi) {
     nextTick(() => updateServiceMetrics());
@@ -781,6 +831,17 @@ onMounted(() => {
     updateFooterHeight();
     copilotFooterResizeObserver = new ResizeObserver(updateFooterHeight);
     copilotFooterResizeObserver.observe(footerEl);
+
+    watch(showStickers, async (val) => {
+      if (val) {
+        await nextTick();
+        const panelEl = stickersPanelRef.value;
+        const h = panelEl ? Math.round(panelEl.getBoundingClientRect().height) : 0;
+        rootEl.style.setProperty('--sticker-panel-height', `${h}px`);
+      } else {
+        rootEl.style.setProperty('--sticker-panel-height', '0px');
+      }
+    });
   });
 });
 
@@ -804,7 +865,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="app-shell" :class="{ 'copilot-mobile-open': copilotMobileOpen }">
+  <div class="app-shell" :class="[fontSizeClass, { 'copilot-mobile-open': copilotMobileOpen }]">
     <header class="chat-header">
       <button type="button" class="end-chat-button" @click="openFeedbackModal">結束對話</button>
       <h1>{{ title }}</h1>
@@ -1022,7 +1083,7 @@ onBeforeUnmount(() => {
         </main>
 
         <transition name="panel-slide">
-          <section v-if="showStickers" class="stickers-panel">
+          <section v-if="showStickers" ref="stickersPanelRef" class="stickers-panel">
             <div class="stickers-header">
               <span>快捷貼圖</span>
               <button type="button" class="icon-button subtle-button" @click="showStickers = false">✕</button>
@@ -1044,6 +1105,22 @@ onBeforeUnmount(() => {
         <div v-if="uploadError" class="error-toast" role="alert" aria-live="assertive">
           <span>⚠</span>
           <span>{{ uploadError }}</span>
+        </div>
+
+        <div class="font-size-switcher" role="group" aria-label="字型大小切換">
+          <div class="font-size-switcher-controls">
+            <button
+              v-for="option in fontSizeOptions"
+              :key="option.value"
+              type="button"
+              class="font-size-button"
+              :class="{ active: fontSize === option.value }"
+              :aria-pressed="fontSize === option.value"
+              @click="setFontSize(option.value)"
+            >
+              {{ option.label }}
+            </button>
+          </div>
         </div>
 
         <footer ref="chatFooterRef" class="chat-footer" :class="{ 'sales-footer': salesMode }">
@@ -1153,6 +1230,21 @@ onBeforeUnmount(() => {
                 @keydown.enter="sendMessage"
               />
             </div>
+
+            <button
+              type="button"
+              class="icon-button mic-button"
+              :class="{ active: isRecording }"
+              :aria-label="isRecording ? '停止語音輸入' : '語音輸入'"
+              @click="toggleVoiceInput"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" class="toolbar-icon">
+                <rect x="9" y="3" width="6" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="1.7"/>
+                <path d="M5 11a7 7 0 0 0 14 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                <line x1="12" y1="18" x2="12" y2="21" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                <line x1="9" y1="21" x2="15" y2="21" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+              </svg>
+            </button>
 
             <button
               type="button"
@@ -1524,80 +1616,7 @@ onBeforeUnmount(() => {
       </svg>
     </button>
 
-    <transition name="feedback-fade">
-      <div
-        v-if="showFeedbackModal"
-        class="feedback-overlay"
-        @click.self="closeFeedbackModal"
-      >
-        <div class="feedback-modal">
-          <template v-if="!feedbackSubmitted">
-            <div class="feedback-title">感謝您的使用</div>
-            <div class="feedback-subtitle">請問您對本次通話服務滿意嗎？</div>
-
-            <div class="feedback-actions">
-              <button
-                type="button"
-                class="feedback-option positive"
-                @click="handleFeedback('positive')"
-              >
-                <svg viewBox="0 0 24 24" aria-hidden="true" class="feedback-icon">
-                  <path
-                    d="M7 10v10H4a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1h3Zm2 10h7.2a2 2 0 0 0 1.94-1.53l1.46-5.84A2 2 0 0 0 17.66 10H14V6.5A2.5 2.5 0 0 0 11.5 4l-.37.03L9 10.5V20Z"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="1.7"
-                  />
-                </svg>
-                <span>滿意</span>
-              </button>
-
-              <button
-                type="button"
-                class="feedback-option negative"
-                @click="handleFeedback('negative')"
-              >
-                <svg viewBox="0 0 24 24" aria-hidden="true" class="feedback-icon">
-                  <path
-                    d="M17 14V4h3a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-3ZM15 4H7.8a2 2 0 0 0-1.94 1.53L4.4 11.37A2 2 0 0 0 6.34 14H10v3.5A2.5 2.5 0 0 0 12.5 20l.37-.03L15 13.5V4Z"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="1.7"
-                  />
-                </svg>
-                <span>不滿意</span>
-              </button>
-            </div>
-
-            <div class="feedback-footer">
-              <button type="button" class="feedback-cancel" @click="closeFeedbackModal">返回通話</button>
-            </div>
-          </template>
-
-          <template v-else>
-            <div class="feedback-success">
-              <svg viewBox="0 0 24 24" aria-hidden="true" class="feedback-success-icon">
-                <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8" />
-                <path
-                  d="m8.7 12.3 2.2 2.2 4.8-5.2"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="1.9"
-                />
-              </svg>
-              <div class="feedback-title">回饋已送出</div>
-              <div class="feedback-subtitle">祝您有美好的一天！</div>
-            </div>
-          </template>
-        </div>
-      </div>
-    </transition>
+    <FeedbackSurveyModal v-model="showFeedbackModal" @close="closeFeedbackModal" @submit="handleFeedback" />
   </div>
 </template>
 
@@ -1705,6 +1724,60 @@ onBeforeUnmount(() => {
     radial-gradient(circle at top right, rgba(255, 255, 255, 0.82), transparent 24%),
     linear-gradient(180deg, #eaeafd 0%, #ffffff 100%);
   color: #243247;
+  --font-size-title: 24px;
+  --font-size-button: 16px;
+  --font-size-body: 16px;
+  --font-size-body-lg: 18px;
+  --font-size-caption: 16px;
+  --font-size-chip: 16px;
+  --font-size-input: 16px;
+  --font-size-tooltip: 16px;
+  --font-size-panel-title: 18px;
+  --font-size-panel-subtitle: 14px;
+  --font-size-tab: 16px;
+  --font-size-card: 17px;
+  --font-size-card-action: 15px;
+  --font-size-feedback-title: 20px;
+  --font-size-feedback-body: 16px;
+  --font-size-feedback-action: 16px;
+}
+
+.app-shell.font-size-large {
+  --font-size-title: 25px;
+  --font-size-button: 17px;
+  --font-size-body: 17px;
+  --font-size-body-lg: 19px;
+  --font-size-caption: 17px;
+  --font-size-chip: 17px;
+  --font-size-input: 17px;
+  --font-size-tooltip: 17px;
+  --font-size-panel-title: 19px;
+  --font-size-panel-subtitle: 15px;
+  --font-size-tab: 17px;
+  --font-size-card: 18px;
+  --font-size-card-action: 16px;
+  --font-size-feedback-title: 21px;
+  --font-size-feedback-body: 17px;
+  --font-size-feedback-action: 17px;
+}
+
+.app-shell.font-size-small {
+  --font-size-title: 22px;
+  --font-size-button: 15px;
+  --font-size-body: 15px;
+  --font-size-body-lg: 17px;
+  --font-size-caption: 15px;
+  --font-size-chip: 15px;
+  --font-size-input: 15px;
+  --font-size-tooltip: 15px;
+  --font-size-panel-title: 17px;
+  --font-size-panel-subtitle: 13px;
+  --font-size-tab: 15px;
+  --font-size-card: 16px;
+  --font-size-card-action: 14px;
+  --font-size-feedback-title: 19px;
+  --font-size-feedback-body: 15px;
+  --font-size-feedback-action: 15px;
 }
 
 .fixed-watermark {
@@ -1764,7 +1837,7 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.14);
   border: 1px solid rgba(255, 255, 255, 0.28);
   border-radius: 999px;
-  font-size: 16px;
+  font-size: var(--font-size-button);
   font-weight: 700;
   letter-spacing: 0.04em;
   cursor: pointer;
@@ -1782,7 +1855,7 @@ onBeforeUnmount(() => {
 
 .chat-header h1 {
   margin: 0;
-  font-size: 24px;
+  font-size: var(--font-size-title);
   font-weight: 800;
   letter-spacing: 0.12em;
 }
@@ -1790,7 +1863,7 @@ onBeforeUnmount(() => {
 .route-subtitle {
   padding: 10px 16px 8px;
   color: #445266;
-  font-size: 16px;
+  font-size: var(--font-size-caption);
   font-weight: 700;
 }
 
@@ -1813,7 +1886,7 @@ onBeforeUnmount(() => {
 .chat-body {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 16px 24px;
+  padding: 8px 16px 112px;
 }
 
 .chat-sidebar {
@@ -1837,7 +1910,7 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
   border-left: 1px solid var(--primary-200-p);
   background: rgba(255, 255, 255, 0.96);
-  font-size: 16px;
+  font-size: var(--font-size-body);
   font-weight: 400;
   line-height: 1.4;
 }
@@ -1910,7 +1983,7 @@ onBeforeUnmount(() => {
     background: transparent;
     color: rgba(95, 113, 136, 0.95);
     cursor: pointer;
-    font-size: 22px;
+    font-size: calc(var(--font-size-title) - 2px);
     line-height: 1;
   }
 
@@ -1973,7 +2046,7 @@ onBeforeUnmount(() => {
   gap: 10px;
   font-weight: 1000;
   color: #2b3d56;
-  font-size: 18px;
+  font-size: var(--font-size-panel-title);
   min-width: 0;
   white-space: nowrap;
 }
@@ -2019,7 +2092,7 @@ onBeforeUnmount(() => {
   gap: 8px;
   margin: 0;
   color: #2b3d56;
-  font-size: 18px;
+  font-size: var(--font-size-panel-title);
   font-weight: 900;
 }
 
@@ -2046,7 +2119,7 @@ onBeforeUnmount(() => {
   border-radius: 16px;
   background: transparent;
   color: #8a97a9;
-  font-size: 16px;
+  font-size: var(--font-size-tab);
   font-weight: 800;
   cursor: pointer;
   transition:
@@ -2073,7 +2146,7 @@ onBeforeUnmount(() => {
 
 .copilot-recommendation-count {
   color: #6d7d92;
-  font-size: 14px;
+  font-size: var(--font-size-panel-subtitle);
   font-weight: 800;
 }
 
@@ -2081,7 +2154,7 @@ onBeforeUnmount(() => {
   border: 0;
   background: transparent;
   color: var(--primary-400-p);
-  font-size: 14px;
+  font-size: var(--font-size-panel-subtitle);
   font-weight: 800;
   cursor: pointer;
 }
@@ -2132,7 +2205,7 @@ onBeforeUnmount(() => {
   border-radius: 999px;
   background: var(--primary-50-p);
   color: var(--primary-400-p);
-  font-size: 13px;
+  font-size: var(--font-size-panel-subtitle);
   font-weight: 800;
 }
 
@@ -2156,7 +2229,7 @@ onBeforeUnmount(() => {
 .copilot-recommendation-text {
   margin: 0;
   color: #1f2a52;
-  font-size: 17px;
+  font-size: var(--font-size-card);
   font-weight: 700;
   line-height: 1.7;
   min-height: 4.5rem;
@@ -2174,7 +2247,7 @@ onBeforeUnmount(() => {
   border-radius: 12px;
   background: linear-gradient(180deg, #706df4 0%, #635cf1 100%);
   color: #ffffff;
-  font-size: 15px;
+  font-size: var(--font-size-card-action);
   font-weight: 900;
   cursor: pointer;
   transition:
@@ -2226,7 +2299,7 @@ onBeforeUnmount(() => {
 
 .copilot-step-text {
   color: #334155;
-  font-size: 15px;
+  font-size: var(--font-size-card-action);
   font-weight: 800;
   line-height: 1.45;
 }
@@ -2264,7 +2337,7 @@ onBeforeUnmount(() => {
   gap: 8px;
   margin-bottom: 0;
   color: rgba(95, 113, 136, 0.95);
-  font-size: 18px;
+  font-size: var(--font-size-panel-title);
   font-weight: 1000;
   letter-spacing: 0;
   text-transform: none;
@@ -2276,7 +2349,7 @@ onBeforeUnmount(() => {
 }
 
 .copilot-context-note {
-  font-size: 16px;
+  font-size: var(--font-size-body);
   font-weight: 400;
   color: rgba(135, 160, 188, 1);
   white-space: nowrap;
@@ -2303,7 +2376,7 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   color: #5f7188;
   font-weight: 400;
-  font-size: 16px;
+  font-size: var(--font-size-body);
 }
 
 .copilot-mood {
@@ -2339,7 +2412,7 @@ onBeforeUnmount(() => {
   border-radius: 999px;
   border: 1px solid transparent;
   font-weight: 400;
-  font-size: 16px;
+  font-size: var(--font-size-body);
   background: rgba(223, 233, 245, 0.7);
   color: #5f7188;
 }
@@ -2366,7 +2439,7 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   color: rgba(95, 113, 136, 0.95);
   font-weight: 400;
-  font-size: 16px;
+  font-size: var(--font-size-body);
 }
 
 .copilot-progress-score {
@@ -2390,7 +2463,7 @@ onBeforeUnmount(() => {
   border-top: 1px solid var(--primary-200-p);
   color: rgba(95, 113, 136, 0.95);
   font-weight: 400;
-  font-size: 16px;
+  font-size: var(--font-size-body);
   line-height: 1.55;
 }
 
@@ -2425,7 +2498,7 @@ onBeforeUnmount(() => {
   color: #5f7188;
   font-weight: 400;
   line-height: 1.6;
-  font-size: 16px;
+  font-size: var(--font-size-body);
 }
 
 .copilot-suggestion-action {
@@ -2438,7 +2511,7 @@ onBeforeUnmount(() => {
   background: rgba(var(--primary-rgb-p), 0.12);
   color: var(--primary-400-p);
   font-weight: 400;
-  font-size: 16px;
+  font-size: var(--font-size-body);
 }
 
 .copilot-secondary {
@@ -2450,7 +2523,7 @@ onBeforeUnmount(() => {
   background: transparent;
   color: rgba(95, 113, 136, 0.95);
   font-weight: 400;
-  font-size: 16px;
+  font-size: var(--font-size-body);
   cursor: pointer;
   transition:
     border-color 0.15s ease,
@@ -2479,7 +2552,7 @@ onBeforeUnmount(() => {
   border-left: 2px solid var(--primary-200-p);
   color: rgba(95, 113, 136, 0.95);
   font-weight: 700;
-  font-size: 16px;
+  font-size: var(--font-size-body);
   cursor: pointer;
 }
 
@@ -2494,7 +2567,7 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 16px;
+  font-size: var(--font-size-body);
   font-weight: 400;
   color: rgba(95, 113, 136, 0.95);
 }
@@ -2524,7 +2597,7 @@ onBeforeUnmount(() => {
   background: transparent;
   color: var(--primary-400-p);
   font-weight: 1000;
-  font-size: 16px;
+  font-size: var(--font-size-body);
   cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 3px;
@@ -2565,13 +2638,13 @@ onBeforeUnmount(() => {
 
 .human-title {
   font-weight: 900;
-  font-size: 16px;
+  font-size: var(--font-size-body);
   color: var(--primary-500-p);
   margin-bottom: 6px;
 }
 
 .human-desc {
-  font-size: 16px;
+  font-size: var(--font-size-body);
   font-weight: 700;
   color: var(--primary-400-p);
   line-height: 1.6;
@@ -2609,7 +2682,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 10px;
   margin-bottom: 12px;
-  font-size: 16px;
+  font-size: var(--font-size-panel-title);
   font-weight: 900;
   color: #25364c;
 }
@@ -2693,7 +2766,7 @@ onBeforeUnmount(() => {
 }
 
 .common-link-label {
-  font-size: 16px;
+  font-size: var(--font-size-body);
   font-weight: 900;
   color: #2b3d56;
 }
@@ -2716,7 +2789,7 @@ onBeforeUnmount(() => {
   color: #5f7188;
   cursor: pointer;
   font-weight: 800;
-  font-size: 16px;
+  font-size: var(--font-size-body);
   transition:
     background 0.15s ease,
     color 0.15s ease,
@@ -2766,7 +2839,7 @@ onBeforeUnmount(() => {
 }
 
 .hotline-number {
-  font-size: 28px;
+  font-size: calc(var(--font-size-title) + 4px);
   font-weight: 1000;
   letter-spacing: 0.02em;
   color: var(--primary-500-p);
@@ -2774,7 +2847,7 @@ onBeforeUnmount(() => {
 }
 
 .hotline-sub {
-  font-size: 16px;
+  font-size: var(--font-size-body);
   font-weight: 800;
   color: rgba(95, 113, 136, 0.9);
 }
@@ -2808,7 +2881,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--primary-200-p);
   border-radius: 999px;
   box-shadow: 0 6px 18px rgba(36, 50, 71, 0.04);
-  font-size: 16px;
+  font-size: var(--font-size-body);
   font-weight: 700;
 }
 
@@ -2872,14 +2945,14 @@ onBeforeUnmount(() => {
 .message-time {
   margin-bottom: 4px;
   color: #5f7188;
-  font-size: 16px;
+  font-size: var(--font-size-body);
   line-height: 1;
 }
 
 .bubble {
   padding: 12px 14px;
   border-radius: 18px;
-  font-size: 16px;
+  font-size: var(--font-size-body);
   line-height: 1.65;
   word-break: break-word;
   box-shadow: 0 6px 18px rgba(36, 50, 71, 0.06);
@@ -3104,7 +3177,7 @@ onBeforeUnmount(() => {
   cursor: pointer;
   color: #5f7188;
   font-weight: 800;
-  font-size: 16px;
+  font-size: var(--font-size-body);
   transition:
     background 0.15s ease,
     border-color 0.15s ease,
@@ -3155,11 +3228,11 @@ onBeforeUnmount(() => {
 }
 
 .file-icon {
-  font-size: 18px;
+  font-size: var(--font-size-body-lg);
 }
 
 .file-name {
-  font-size: 16px;
+  font-size: var(--font-size-body);
   text-decoration: underline;
 }
 
@@ -3169,7 +3242,7 @@ onBeforeUnmount(() => {
   gap: 4px;
   margin-top: 4px;
   margin-right: 4px;
-  font-size: 16px;
+  font-size: var(--font-size-body);
   font-weight: 700;
 }
 
@@ -3199,7 +3272,7 @@ onBeforeUnmount(() => {
 
 .stickers-header span {
   color: #97a3b5;
-  font-size: 16px;
+  font-size: var(--font-size-caption);
   font-weight: 800;
   letter-spacing: 0.1em;
 }
@@ -3256,7 +3329,7 @@ onBeforeUnmount(() => {
   background: #e24e4f;
   border-radius: 14px;
   box-shadow: 0 10px 24px rgba(226, 78, 79, 0.25);
-  font-size: 16px;
+  font-size: var(--font-size-body);
   font-weight: 700;
 }
 
@@ -3283,14 +3356,14 @@ onBeforeUnmount(() => {
 
 .feedback-title {
   color: #1c1c1e;
-  font-size: 20px;
+  font-size: var(--font-size-feedback-title);
   font-weight: 800;
 }
 
 .feedback-subtitle {
   margin-top: 8px;
   color: #8e8e93;
-  font-size: 16px;
+  font-size: var(--font-size-feedback-body);
   line-height: 1.6;
 }
 
@@ -3318,7 +3391,7 @@ onBeforeUnmount(() => {
 }
 
 .feedback-option span {
-  font-size: 16px;
+  font-size: var(--font-size-feedback-action);
   font-weight: 700;
 }
 
@@ -3346,7 +3419,7 @@ onBeforeUnmount(() => {
   color: var(--primary-500-p);
   background: transparent;
   border: 0;
-  font-size: 16px;
+  font-size: var(--font-size-feedback-action);
   font-weight: 700;
   cursor: pointer;
 }
@@ -3393,13 +3466,66 @@ onBeforeUnmount(() => {
   box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.03);
 }
 
+.font-size-switcher {
+  position: absolute;
+  left: 16px;
+  bottom: calc(var(--chat-footer-height, 0px) + var(--sticker-panel-height, 0px) + 16px);
+  z-index: 8;
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  padding: 8px;
+  border: 1px solid rgba(var(--primary-rgb-p), 0.16);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 14px 30px rgba(36, 50, 71, 0.12);
+  backdrop-filter: blur(10px);
+}
+
+.font-size-switcher-controls {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 14px;
+  background: rgba(243, 245, 250, 0.95);
+}
+
+.font-size-button {
+  min-width: 40px;
+  padding: 8px 10px;
+  color: #5f7188;
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  font-size: var(--font-size-button);
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.font-size-button:hover {
+  color: var(--primary-500-p);
+  transform: translateY(-1px);
+}
+
+.font-size-button.active {
+  color: #ffffff;
+  background: linear-gradient(180deg, var(--primary-400-p) 0%, var(--primary-500-p) 100%);
+  box-shadow: 0 8px 18px rgba(var(--primary-rgb-p), 0.22);
+}
+
 .sales-footer .quick-replies-header span:first-child,
 .sales-footer .quick-reply-chip {
-  font-size: 16px;
+  font-size: var(--font-size-body);
 }
 
 .sales-footer .upload-tooltip {
-  font-size: 16px;
+  font-size: var(--font-size-tooltip);
 }
 
 .quick-replies {
@@ -3478,7 +3604,7 @@ onBeforeUnmount(() => {
 
 .quick-replies-header span:first-child {
   color: var(--primary-500-p);
-  font-size: 16px;
+  font-size: var(--font-size-panel-title);
   font-weight: 800;
   letter-spacing: 0.04em;
 }
@@ -3520,7 +3646,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--primary-200-p);
   border-radius: 999px;
   box-shadow: 0 6px 14px rgba(74, 100, 126, 0.05);
-  font-size: 16px;
+  font-size: var(--font-size-chip);
   font-weight: 400;
   text-align: left;
   cursor: pointer;
@@ -3561,7 +3687,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--primary-200-p);
   border-radius: 12px;
   box-shadow: 0 10px 24px rgba(var(--primary-rgb-p), 0.12);
-  font-size: 16px;
+  font-size: var(--font-size-tooltip);
   font-weight: 700;
   line-height: 1.5;
   pointer-events: none;
@@ -3622,8 +3748,18 @@ onBeforeUnmount(() => {
   color: var(--primary-500-p);
 }
 
+.mic-button.active {
+  color: #e53935;
+  animation: mic-pulse 1s ease-in-out infinite;
+}
+
+@keyframes mic-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 .subtle-button {
-  font-size: 16px;
+  font-size: var(--font-size-button);
 }
 
 .hidden-input {
@@ -3655,7 +3791,7 @@ onBeforeUnmount(() => {
   background: transparent;
   border: 0;
   outline: none;
-  font-size: 16px;
+  font-size: var(--font-size-input);
 }
 
 .input-shell input::placeholder {
@@ -3666,7 +3802,7 @@ onBeforeUnmount(() => {
   width: 44px;
   height: 44px;
   padding: 0;
-  font-size: 24px;
+  font-size: calc(var(--font-size-title) - 1px);
   color: #c4cad3;
 }
 
@@ -3696,7 +3832,7 @@ onBeforeUnmount(() => {
   .end-chat-button {
     right: 14px;
     padding: 7px 12px;
-    font-size: 16px;
+    font-size: var(--font-size-button);
   }
 
   .chat-header {
@@ -3710,7 +3846,7 @@ onBeforeUnmount(() => {
   }
 
   .chat-header h1 {
-    font-size: 16px;
+    font-size: var(--font-size-panel-title);
     letter-spacing: 0.02em;
     margin-left: 8px;
   }
@@ -3734,7 +3870,7 @@ onBeforeUnmount(() => {
     flex: 1;
     min-width: 0;
     white-space: nowrap;
-    font-size: 14px;
+    font-size: var(--font-size-panel-subtitle);
   }
 
   .quick-replies-right {
@@ -3745,6 +3881,17 @@ onBeforeUnmount(() => {
 
   .quick-replies-tools {
     display: none;
+  }
+
+  .font-size-switcher {
+    left: 12px;
+    right: 12px;
+    bottom: calc(var(--chat-footer-height, 0px) + var(--sticker-panel-height, 0px) + 12px);
+  }
+
+  .font-size-button {
+    min-width: 34px;
+    padding: 8px 8px;
   }
 }
 </style>

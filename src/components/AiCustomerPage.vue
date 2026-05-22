@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import FeedbackSurveyModal from './FeedbackSurveyModal.vue';
 
 const props = defineProps({
   title: {
@@ -9,6 +10,15 @@ const props = defineProps({
 });
 
 const withBase = (path) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
+
+const fontSizeOptions = [
+  { value: 'large', label: '大' },
+  { value: 'medium', label: '中' },
+  { value: 'small', label: '小' }
+];
+
+const fontSizeStorageKey = 'ai-customer-font-size';
+const fontSize = ref('medium');
 
 const getTime = () =>
   new Date().toLocaleTimeString([], {
@@ -55,18 +65,68 @@ const messages = ref([
     status: 'read'
   }
 ]);
+const fontSizeClass = computed(() => `font-size-${fontSize.value}`);
 const isTyping = ref(false);
 const showStickers = ref(false);
+const isRecording = ref(false);
+const hoveringUpload = ref(false);
 const showFeedbackModal = ref(false);
-const feedbackSubmitted = ref(false);
+const showQuickMenu = ref(false);
 const uploadError = ref('');
 const chatEndRef = ref(null);
 const fileInputRef = ref(null);
 const chatFooterRef = ref(null);
-const chatBodyRef = ref(null);
 let aiTimer = null;
 let uploadErrorTimer = null;
 let readStatusTimer = null;
+let footerResizeObserver = null;
+
+const serviceCards = [
+  {
+    title: '弱勢照顧服務',
+    hero: withBase('/ai-cards/give.png'),
+    links: ['長者關懷服務', '身心障礙協助', '急難救助申請'],
+    heroBg: '#eae9ff',
+    titleBg: '#6764f0'
+  },
+  {
+    title: '都市更新與住宅服務',
+    hero: withBase('/ai-cards/hygiene.png'),
+    links: ['交屋 / 入住相關申請', '住宅補助申請', '都更 / 社宅資訊'],
+    heroBg: '#fff9e5',
+    titleBg: '#7133EA'
+  },
+  {
+    title: '交通與生活安全',
+    hero: withBase('/ai-cards/road.png'),
+    links: ['道路坑洞通報', '公車動態查詢', '垃圾清運時間'],
+    heroBg: '#e8faf2',
+    titleBg: '#2db87a'
+  },
+  {
+    title: '育兒教育與親子',
+    hero: withBase('/ai-cards/welfare.png'),
+    links: ['育兒津貼申請', '幼兒園抽籤資訊', '親子館預約'],
+    heroBg: '#fff0f5',
+    titleBg: '#ee4477',
+    heroFit: 'cover'
+  }
+];
+
+const commonLinks = [
+  { id: 'mail', label: '市長信箱', icon: 'user' },
+  { id: 'news', label: '市政新聞', icon: 'doc' },
+  { id: 'road', label: '路況資訊', icon: 'pin' },
+  { id: 'list', label: '便民清單', icon: 'pulse' }
+];
+
+const hotQuestions = [
+  '如何申請租屋補助？',
+  '垃圾清運時間表查詢',
+  '育兒津貼請領細節',
+  '汽機車線上申辦',
+  '近期市政活動一覽'
+];
 
 const canSend = computed(() => inputText.value.trim().length > 0);
 const speakingMessageId = ref(null);
@@ -139,19 +199,6 @@ const scrollToBottom = async () => {
   chatEndRef.value?.scrollIntoView({ behavior: 'smooth', block: 'end' });
 };
 
-const playIntroAudio = () => {
-  const text = messages.value[0]?.text?.replace(/\n+/g, ' ') || '';
-  if (!window.speechSynthesis || !text) {
-    return;
-  }
-
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = 'zh-TW';
-  utterance.rate = 0.95;
-  utterance.pitch = 1;
-  window.speechSynthesis.speak(utterance);
-};
 
 const normalizeSpeechText = (text) =>
   (text ?? '')
@@ -165,15 +212,14 @@ const normalizeSpeechText = (text) =>
     .replace(/\s+/g, ' ')
     .trim();
 
-const playMessageAudio = (message) => {
-  const speechText =
-    message.type === 'intro' ? normalizeSpeechText(message.text) : normalizeSpeechText(message.text || '');
-
-  if (!window.speechSynthesis || !speechText) {
+const playMessageWithSuggestions = (msg) => {
+  if (!window.speechSynthesis) {
     return;
   }
 
-  if (speakingMessageId.value === message.id && window.speechSynthesis.speaking) {
+  const fullKey = 'full-' + msg.id;
+
+  if (speakingMessageId.value === fullKey && window.speechSynthesis.speaking) {
     window.speechSynthesis.cancel();
     speakingMessageId.value = null;
     return;
@@ -181,25 +227,38 @@ const playMessageAudio = (message) => {
 
   window.speechSynthesis.cancel();
 
-  const utterance = new SpeechSynthesisUtterance(speechText);
-  utterance.lang = 'zh-TW';
-  utterance.rate = 0.95;
-  utterance.pitch = 1;
-  utterance.onstart = () => {
-    speakingMessageId.value = message.id;
-  };
-  utterance.onend = () => {
-    if (speakingMessageId.value === message.id) {
-      speakingMessageId.value = null;
-    }
-  };
-  utterance.onerror = () => {
-    if (speakingMessageId.value === message.id) {
-      speakingMessageId.value = null;
-    }
-  };
+  const parts = [
+    normalizeSpeechText(msg.text || ''),
+    ...(msg.suggestions || []).map((s) => normalizeSpeechText(s))
+  ].filter(Boolean);
 
-  window.speechSynthesis.speak(utterance);
+  if (!parts.length) {
+    return;
+  }
+
+  speakingMessageId.value = fullKey;
+
+  parts.forEach((text, index) => {
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'zh-TW';
+    utterance.rate = 0.95;
+    utterance.pitch = 1;
+
+    if (index === parts.length - 1) {
+      utterance.onend = () => {
+        if (speakingMessageId.value === fullKey) {
+          speakingMessageId.value = null;
+        }
+      };
+      utterance.onerror = () => {
+        if (speakingMessageId.value === fullKey) {
+          speakingMessageId.value = null;
+        }
+      };
+    }
+
+    window.speechSynthesis.speak(utterance);
+  });
 };
 
 const appendMessage = (message) => {
@@ -271,9 +330,6 @@ const simulateAiResponse = (query) => {
   }, 1000);
 };
 
-const scrollToTop = () => {
-  chatBodyRef.value?.scrollTo({ top: 0, behavior: 'smooth' });
-};
 
 const submitText = (rawText) => {
   const trimmed = (rawText ?? '').trim();
@@ -325,6 +381,31 @@ const sendSticker = (sticker) => {
 
 const triggerFileUpload = () => {
   fileInputRef.value?.click();
+};
+
+let voiceRecognition = null;
+const toggleVoiceInput = () => {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { return; }
+
+  if (isRecording.value) {
+    voiceRecognition?.stop();
+    return;
+  }
+
+  voiceRecognition = new SR();
+  voiceRecognition.lang = 'zh-TW';
+  voiceRecognition.continuous = false;
+  voiceRecognition.interimResults = false;
+
+  voiceRecognition.onstart = () => { isRecording.value = true; };
+  voiceRecognition.onend = () => { isRecording.value = false; };
+  voiceRecognition.onerror = () => { isRecording.value = false; };
+  voiceRecognition.onresult = (e) => {
+    inputText.value += e.results[0][0].transcript;
+  };
+
+  voiceRecognition.start();
 };
 
 const showError = (message) => {
@@ -389,20 +470,32 @@ const handleFileUpload = (event) => {
 };
 
 const openFeedbackModal = () => {
-  feedbackSubmitted.value = false;
   showFeedbackModal.value = true;
 };
 
 const closeFeedbackModal = () => {
   showFeedbackModal.value = false;
-  feedbackSubmitted.value = false;
 };
 
-const handleFeedback = () => {
-  feedbackSubmitted.value = true;
-  window.setTimeout(() => {
-    closeFeedbackModal();
-  }, 1800);
+const handleFeedback = (feedback) => {
+  console.log('User Feedback:', feedback);
+};
+
+const openQuickMenu = () => {
+  showQuickMenu.value = true;
+};
+
+const closeQuickMenu = () => {
+  showQuickMenu.value = false;
+};
+
+const useQuickMenuPrompt = (text) => {
+  if (!text) {
+    return;
+  }
+
+  submitText(text);
+  showQuickMenu.value = false;
 };
 
 const handleGlobalKeydown = (event) => {
@@ -417,9 +510,52 @@ const handleGlobalKeydown = (event) => {
   if (showFeedbackModal.value) {
     closeFeedbackModal();
   }
+
+  if (showQuickMenu.value) {
+    closeQuickMenu();
+  }
+};
+
+const setFontSize = (value) => {
+  fontSize.value = value;
+
+  try {
+    window.localStorage.setItem(fontSizeStorageKey, value);
+  } catch {
+    // Ignore storage failures and keep the UI functional.
+  }
 };
 
 onMounted(() => {
+  try {
+    const savedFontSize = window.localStorage.getItem(fontSizeStorageKey);
+    if (fontSizeOptions.some((option) => option.value === savedFontSize)) {
+      fontSize.value = savedFontSize;
+    }
+  } catch {
+    // Ignore storage failures and keep the UI functional.
+  }
+
+  const footerEl = Array.isArray(chatFooterRef.value) ? chatFooterRef.value[0] : chatFooterRef.value;
+  if (footerEl) {
+    const rootEl = footerEl.closest('.app-shell');
+    const updateFooterHeight = () => {
+      if (!rootEl) {
+        return;
+      }
+
+      const height = Math.round(footerEl.getBoundingClientRect().height);
+      rootEl.style.setProperty('--chat-footer-height', `${height}px`);
+    };
+
+    updateFooterHeight();
+
+    if (typeof ResizeObserver !== 'undefined') {
+      footerResizeObserver = new ResizeObserver(updateFooterHeight);
+      footerResizeObserver.observe(footerEl);
+    }
+  }
+
   void scrollToBottom();
   window.addEventListener('keydown', handleGlobalKeydown, { passive: true });
 });
@@ -439,11 +575,16 @@ onBeforeUnmount(() => {
   if (uploadErrorTimer) {
     window.clearTimeout(uploadErrorTimer);
   }
+
+  if (footerResizeObserver) {
+    footerResizeObserver.disconnect();
+    footerResizeObserver = null;
+  }
 });
 </script>
 
 <template>
-  <div class="app-shell">
+  <div class="app-shell" :class="fontSizeClass">
     <header class="chat-header">
       <button type="button" class="end-chat-button" @click="openFeedbackModal">結束對話</button>
       <h1>{{ title }}</h1>
@@ -455,7 +596,7 @@ onBeforeUnmount(() => {
           <img :src="withBase('/branding/hsinchu-logo.svg')" alt="" />
         </div>
 
-        <main ref="chatBodyRef" class="chat-body">
+        <main class="chat-body">
           <div
             v-for="msg in messages"
             :key="msg.id"
@@ -480,31 +621,6 @@ onBeforeUnmount(() => {
                   <div class="intro-panel">
                     <div class="intro-header">
                       <div class="intro-badge">AI 智慧客服助理</div>
-                      <button type="button" class="intro-audio-button" aria-label="朗讀介紹" @click="playMessageAudio(msg)">
-                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                          <path
-                            d="M11 5.8 7.8 8.5H5.5A1.5 1.5 0 0 0 4 10v4a1.5 1.5 0 0 0 1.5 1.5h2.3L11 18.2V5.8Z"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.8"
-                            stroke-linejoin="round"
-                          />
-                          <path
-                            d="M14.8 8.6a4.2 4.2 0 0 1 0 6.8"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.8"
-                            stroke-linecap="round"
-                          />
-                          <path
-                            d="M16.8 6.6a7 7 0 0 1 0 10.8"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.8"
-                            stroke-linecap="round"
-                          />
-                        </svg>
-                      </button>
                     </div>
                     <div class="intro-title">您好！我是新竹市政府 1999 客服助理小新。</div>
                     <div class="intro-text">{{ msg.text }}</div>
@@ -566,6 +682,7 @@ onBeforeUnmount(() => {
                 </div>
 
                 <span v-if="msg.sender === 'agent' && msg.type !== 'intro'" class="message-time">{{ msg.time }}</span>
+
               </div>
 
               <div v-if="msg.suggestions?.length" class="suggestion-strip">
@@ -584,6 +701,37 @@ onBeforeUnmount(() => {
                     {{ suggestion }}
                   </button>
                 </div>
+                <button
+                  type="button"
+                  class="suggestion-play-button"
+                  :class="{ active: speakingMessageId === 'full-' + msg.id }"
+                  :aria-label="speakingMessageId === 'full-' + msg.id ? '停止朗讀' : '朗讀訊息與建議'"
+                  @click="playMessageWithSuggestions(msg)"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M11 5.8 7.8 8.5H5.5A1.5 1.5 0 0 0 4 10v4a1.5 1.5 0 0 0 1.5 1.5h2.3L11 18.2V5.8Z"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linejoin="round"
+                    />
+                    <path
+                      d="M14.8 8.6a4.2 4.2 0 0 1 0 6.8"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                    />
+                    <path
+                      d="M16.8 6.6a7 7 0 0 1 0 10.8"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                    />
+                  </svg>
+                </button>
               </div>
             </div>
 
@@ -651,9 +799,25 @@ onBeforeUnmount(() => {
           <span>{{ uploadError }}</span>
         </div>
 
+        <div v-show="!showStickers && !hoveringUpload" class="font-size-switcher" role="group" aria-label="字型大小切換">
+          <div class="font-size-switcher-controls">
+            <button
+              v-for="option in fontSizeOptions"
+              :key="option.value"
+              type="button"
+              class="font-size-button"
+              :class="{ active: fontSize === option.value }"
+              :aria-pressed="fontSize === option.value"
+              @click="setFontSize(option.value)"
+            >
+              {{ option.label }}
+            </button>
+          </div>
+        </div>
+
         <footer ref="chatFooterRef" class="chat-footer">
           <div class="composer">
-            <div class="upload-trigger">
+            <div class="upload-trigger" @mouseenter="hoveringUpload = true" @mouseleave="hoveringUpload = false">
               <button type="button" class="icon-button" aria-label="上傳附件" @click="triggerFileUpload">
                 <svg viewBox="0 0 24 24" aria-hidden="true" class="toolbar-icon">
                   <path
@@ -713,6 +877,21 @@ onBeforeUnmount(() => {
 
             <button
               type="button"
+              class="icon-button mic-button"
+              :class="{ active: isRecording }"
+              :aria-label="isRecording ? '停止語音輸入' : '語音輸入'"
+              @click="toggleVoiceInput"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" class="toolbar-icon">
+                <rect x="9" y="3" width="6" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="1.7"/>
+                <path d="M5 11a7 7 0 0 0 14 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                <line x1="12" y1="18" x2="12" y2="21" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                <line x1="9" y1="21" x2="15" y2="21" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+              </svg>
+            </button>
+
+            <button
+              type="button"
               class="send-button"
               :disabled="!canSend || isTyping"
               aria-label="送出訊息"
@@ -728,49 +907,186 @@ onBeforeUnmount(() => {
 
     </div>
 
-    <transition name="feedback-fade">
-      <div v-if="showFeedbackModal" class="feedback-overlay">
-        <div class="feedback-modal">
-          <template v-if="!feedbackSubmitted">
-            <div class="feedback-title">請問您對本次服務滿意嗎？</div>
-            <div class="feedback-subtitle">您的回饋會幫助我們持續優化 AI 客服體驗。</div>
+    <button
+      v-if="!showQuickMenu"
+      type="button"
+      class="quick-menu-tab"
+      aria-label="開啟常用選單"
+      @click="openQuickMenu"
+    >
+      <div class="quick-menu-bubble">常用選單請點我</div>
+      <img
+        class="quick-menu-bird"
+        :src="withBase('/stickers/pika-explain.png')"
+        alt=""
+        aria-hidden="true"
+      />
+    </button>
 
-            <div class="feedback-actions">
-              <button type="button" class="feedback-option positive" @click="handleFeedback('positive')">
-                <span class="feedback-icon-circle">😊</span>
-                <span>滿意</span>
+    <transition name="quick-menu-slide">
+      <div v-if="showQuickMenu" class="quick-menu-overlay" @click.self="closeQuickMenu">
+        <aside class="quick-menu-panel" aria-label="常用選單">
+          <div class="quick-menu-header">
+            <div class="quick-menu-header-title">
+              <h2>1999 客服功能快捷區</h2>
+            </div>
+            <button type="button" class="quick-menu-close" aria-label="關閉常用選單" @click="closeQuickMenu">
+              ✕
+            </button>
+          </div>
+
+          <div class="quick-menu-body">
+          <section class="sidebar-section">
+            <div class="sidebar-section-title">
+              <span class="section-bar" aria-hidden="true"></span>
+              <span>2.1 常見問題字卡</span>
+            </div>
+
+            <div class="ai-card-grid">
+              <div
+                v-for="card in serviceCards"
+                :key="card.title"
+                class="ai-card"
+              >
+                <div class="ai-card-hero" aria-hidden="true" :style="{ background: card.heroBg }">
+                  <img
+                    :src="card.hero"
+                    :alt="card.title"
+                    class="ai-card-hero-image"
+                    :style="{ objectFit: card.heroFit || 'cover', padding: card.heroPadding || '0' }"
+                  />
+                </div>
+                <div class="ai-card-titlebar" :style="{ background: card.titleBg }">{{ card.title }}</div>
+                <div class="ai-card-links">
+                  <button
+                    v-for="item in card.links"
+                    :key="item"
+                    type="button"
+                    class="ai-card-link"
+                    @click.stop="useQuickMenuPrompt(item)"
+                  >
+                    <span>{{ item }}</span>
+                    <svg viewBox="0 0 24 24" aria-hidden="true" class="ai-card-chevron">
+                      <path
+                        d="M9 6 15 12 9 18"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="sidebar-section">
+            <div class="sidebar-section-title">
+              <span class="section-bar" aria-hidden="true"></span>
+              <span>2.2 常用連結</span>
+            </div>
+
+            <div class="common-links">
+              <button
+                v-for="item in commonLinks"
+                :key="item.id"
+                type="button"
+                class="common-link"
+                @click="useQuickMenuPrompt(item.label)"
+              >
+                <div class="common-link-icon" :data-icon="item.icon" aria-hidden="true">
+                  <svg v-if="item.icon === 'user'" viewBox="0 0 24 24">
+                    <path
+                      d="M12 12.2a4.2 4.2 0 1 0-4.2-4.2 4.2 4.2 0 0 0 4.2 4.2Z"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                    />
+                    <path
+                      d="M4.6 20a7.4 7.4 0 0 1 14.8 0"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                    />
+                  </svg>
+                  <svg v-else-if="item.icon === 'doc'" viewBox="0 0 24 24">
+                    <path
+                      d="M7 3.8h7.8L19 8v12.2a1.8 1.8 0 0 1-1.8 1.8H7a2 2 0 0 1-2-2V5.8a2 2 0 0 1 2-2Z"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linejoin="round"
+                    />
+                    <path
+                      d="M14.8 3.8V8H19"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                  <svg v-else-if="item.icon === 'pin'" viewBox="0 0 24 24">
+                    <path
+                      d="M12 21s7-4.3 7-10.1A7 7 0 0 0 5 10.9C5 16.7 12 21 12 21Z"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linejoin="round"
+                    />
+                    <circle cx="12" cy="10.5" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8" />
+                  </svg>
+                  <svg v-else viewBox="0 0 24 24">
+                    <path
+                      d="M3.5 12h4l2-5.2 4.1 12.4 2.3-7.2h4.6"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.9"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </div>
+                <div class="common-link-label">{{ item.label }}</div>
               </button>
-              <button type="button" class="feedback-option negative" @click="handleFeedback('negative')">
-                <span class="feedback-icon-circle">☹</span>
-                <span>不滿意</span>
+            </div>
+          </section>
+
+          <section class="sidebar-section">
+            <div class="sidebar-section-title">
+              <span class="section-bar" aria-hidden="true"></span>
+              <span>2.3 熱門問答</span>
+            </div>
+
+            <div class="hot-list">
+              <button
+                v-for="q in hotQuestions"
+                :key="q"
+                type="button"
+                class="hot-item"
+                @click="useQuickMenuPrompt(q)"
+              >
+                <span class="hot-dot" aria-hidden="true"></span>
+                <span class="hot-item-text">{{ q }}</span>
+                <svg class="hot-chevron" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M9 18l6-6-6-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
               </button>
             </div>
+          </section>
 
-            <div class="feedback-footer">
-              <button type="button" class="feedback-cancel" @click="closeFeedbackModal">返回對話</button>
-            </div>
-          </template>
+          </div>
 
-          <template v-else>
-            <div class="feedback-success">
-              <svg viewBox="0 0 24 24" aria-hidden="true" class="feedback-success-icon">
-                <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8" />
-                <path
-                  d="m8.7 12.3 2.2 2.2 4.8-5.2"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="1.9"
-                />
-              </svg>
-              <div class="feedback-title">回饋已送出</div>
-              <div class="feedback-subtitle">祝您有美好的一天！</div>
-            </div>
-          </template>
-        </div>
+          <div class="quick-menu-footer">
+            <button type="button" class="quick-menu-return" @click="closeQuickMenu">返回文字客服</button>
+          </div>
+        </aside>
       </div>
     </transition>
+
+    <FeedbackSurveyModal v-model="showFeedbackModal" @close="closeFeedbackModal" @submit="handleFeedback" />
   </div>
 </template>
 
@@ -791,6 +1107,11 @@ onBeforeUnmount(() => {
   --color-yellow-50: #fef9e5;
   --color-darkblue-500: #1f2a52;
   --color-darkblue-50: #f1f2f5;
+  --primary-100-p: #eae9ff;
+  --primary-200-p: #d7d7fb;
+  --primary-400-p: #6764f0;
+  --primary-500-p: #4c44ea;
+  --primary-rgb-p: 103, 100, 240;
 }
 
 :global(*) {
@@ -844,6 +1165,48 @@ onBeforeUnmount(() => {
     radial-gradient(circle at top right, rgba(255, 255, 255, 0.8), transparent 24%),
     linear-gradient(180deg, #eaeafd 0%, #ffffff 100%);
   color: #1f2a52;
+  --font-size-title: 24px;
+  --font-size-button: 16px;
+  --font-size-body: 16px;
+  --font-size-body-large: 20px;
+  --font-size-caption: 16px;
+  --font-size-chip: 16px;
+  --font-size-time: 16px;
+  --font-size-input: 16px;
+  --font-size-tooltip: 16px;
+  --font-size-modal-title: 20px;
+  --font-size-modal-body: 16px;
+  --font-size-feedback-icon: 28px;
+}
+
+.app-shell.font-size-large {
+  --font-size-title: 25px;
+  --font-size-button: 17px;
+  --font-size-body: 17px;
+  --font-size-body-large: 21px;
+  --font-size-caption: 17px;
+  --font-size-chip: 17px;
+  --font-size-time: 17px;
+  --font-size-input: 17px;
+  --font-size-tooltip: 17px;
+  --font-size-modal-title: 21px;
+  --font-size-modal-body: 17px;
+  --font-size-feedback-icon: 30px;
+}
+
+.app-shell.font-size-small {
+  --font-size-title: 22px;
+  --font-size-button: 15px;
+  --font-size-body: 15px;
+  --font-size-body-large: 18px;
+  --font-size-caption: 15px;
+  --font-size-chip: 15px;
+  --font-size-time: 14px;
+  --font-size-input: 15px;
+  --font-size-tooltip: 15px;
+  --font-size-modal-title: 19px;
+  --font-size-modal-body: 15px;
+  --font-size-feedback-icon: 26px;
 }
 
 .chat-header,
@@ -874,7 +1237,7 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.14);
   border: 1px solid rgba(255, 255, 255, 0.28);
   border-radius: 999px;
-  font-size: 16px;
+  font-size: var(--font-size-button);
   font-weight: 700;
   letter-spacing: 0.04em;
   cursor: pointer;
@@ -892,7 +1255,7 @@ onBeforeUnmount(() => {
 
 .chat-header h1 {
   margin: 0;
-  font-size: 24px;
+  font-size: var(--font-size-title);
   font-weight: 800;
   letter-spacing: 0.12em;
 }
@@ -945,13 +1308,16 @@ onBeforeUnmount(() => {
 .chat-body {
   flex: 1;
   overflow-y: auto;
-  padding: 12px 16px 20px;
+  padding: 12px 16px 104px;
   background: transparent;
 }
 
 .message-row {
   display: flex;
   width: 100%;
+  max-width: 1400px;
+  margin-left: auto;
+  margin-right: auto;
   margin-bottom: 16px;
   gap: 10px;
 }
@@ -1002,6 +1368,7 @@ onBeforeUnmount(() => {
 }
 
 .message-stack {
+  position: relative;
   display: flex;
   flex-direction: column;
   max-width: min(98%, 1500px);
@@ -1029,7 +1396,7 @@ onBeforeUnmount(() => {
 .message-time {
   margin-bottom: 4px;
   color: #5f7188;
-  font-size: 16px;
+  font-size: var(--font-size-time);
   line-height: 1;
 }
 
@@ -1059,21 +1426,21 @@ onBeforeUnmount(() => {
   border-radius: 999px;
   background: rgba(103, 100, 240, 0.1);
   color: #6764f0;
-  font-size: 16px;
+  font-size: var(--font-size-caption);
   font-weight: 800;
 }
 
 .intro-title {
   margin-top: 12px;
   color: #1f2a52;
-  font-size: 20px;
+  font-size: var(--font-size-body-large);
   font-weight: 900;
 }
 
 .intro-text {
   margin-top: 8px;
   color: #5f7188;
-  font-size: 16px;
+  font-size: var(--font-size-body);
   line-height: 1.7;
   white-space: pre-wrap;
 }
@@ -1140,14 +1507,14 @@ onBeforeUnmount(() => {
 
 .promo-video-title {
   color: #1f2a52;
-  font-size: 16px;
+  font-size: var(--font-size-caption);
   font-weight: 900;
   line-height: 1.35;
 }
 
 .promo-video-subtitle {
   color: #5f7188;
-  font-size: 14px;
+  font-size: calc(var(--font-size-caption) - 2px);
   font-weight: 700;
 }
 
@@ -1180,10 +1547,42 @@ onBeforeUnmount(() => {
   transform: translateY(1px) scale(0.98);
 }
 
+.message-audio-button {
+  flex-shrink: 0;
+  align-self: flex-end;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid #e1e0fb;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #9aa7bf;
+  cursor: pointer;
+  transition:
+    color 0.18s ease,
+    background 0.18s ease,
+    border-color 0.18s ease;
+  margin-bottom: 2px;
+}
+
+.message-audio-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.message-audio-button:hover,
+.message-audio-button.active {
+  color: #6764f0;
+  background: #f0f0ff;
+  border-color: #b7b5f4;
+}
+
 .bubble {
   padding: 12px 14px;
   border-radius: 18px;
-  font-size: 16px;
+  font-size: var(--font-size-body);
   line-height: 1.65;
   word-break: break-word;
   box-shadow: 0 6px 18px rgba(36, 50, 71, 0.06);
@@ -1244,7 +1643,7 @@ onBeforeUnmount(() => {
 
 .typing-card-title {
   color: #1f2a52;
-  font-size: 18px;
+  font-size: calc(var(--font-size-body) + 2px);
   font-weight: 900;
   letter-spacing: 0.04em;
 }
@@ -1316,18 +1715,59 @@ onBeforeUnmount(() => {
   gap: 8px;
 }
 
+.intro-stack .suggestion-strip {
+  position: relative;
+  padding-right: 44px;
+}
+
 .suggestion-caption {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   color: #87a0bc;
-  font-size: 16px;
+  font-size: var(--font-size-caption);
   font-weight: 800;
   letter-spacing: 0.04em;
 }
 
 .suggestion-caption-icon {
   color: #6764f0;
+}
+
+.suggestion-play-button {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid #e1e0fb;
+  border-radius: 999px;
+  background: #53b1cd;
+  color: #ffffff;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(83, 177, 205, 0.28);
+  transition:
+    background 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+}
+
+.suggestion-play-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.suggestion-play-button:hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
+.suggestion-play-button.active {
+  background: #6764f0;
+  box-shadow: 0 4px 12px rgba(103, 100, 240, 0.3);
 }
 
 .suggestion-list {
@@ -1343,7 +1783,7 @@ onBeforeUnmount(() => {
   border: 1.5px solid #d7d7fb;
   border-radius: 999px;
   box-shadow: none;
-  font-size: 16px;
+  font-size: var(--font-size-chip);
   font-weight: 700;
   cursor: pointer;
   transition:
@@ -1360,6 +1800,7 @@ onBeforeUnmount(() => {
   transform: translateY(-1px);
   color: #6764f0;
 }
+
 
 .sticker-image {
   display: block;
@@ -1385,7 +1826,7 @@ onBeforeUnmount(() => {
 }
 
 .file-name {
-  font-size: 16px;
+  font-size: var(--font-size-body);
   text-decoration: underline;
 }
 
@@ -1403,8 +1844,61 @@ onBeforeUnmount(() => {
   background: #e24e4f;
   border-radius: 14px;
   box-shadow: 0 10px 24px rgba(226, 78, 79, 0.25);
-  font-size: 16px;
+  font-size: var(--font-size-body);
   font-weight: 700;
+}
+
+.font-size-switcher {
+  position: absolute;
+  left: 16px;
+  bottom: calc(var(--chat-footer-height, 0px) + 16px);
+  z-index: 8;
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  padding: 8px;
+  border: 1px solid rgba(103, 100, 240, 0.16);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 14px 30px rgba(36, 50, 71, 0.12);
+  backdrop-filter: blur(10px);
+}
+
+.font-size-switcher-controls {
+  display: inline-flex;
+  padding: 4px;
+  gap: 4px;
+  border-radius: 14px;
+  background: #f5f6ff;
+}
+
+.font-size-button {
+  min-width: 40px;
+  padding: 8px 10px;
+  color: #5f7188;
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  font-size: var(--font-size-button);
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.font-size-button:hover {
+  color: #6764f0;
+  transform: translateY(-1px);
+}
+
+.font-size-button.active {
+  color: #ffffff;
+  background: linear-gradient(180deg, #6764f0 0%, #4c44ea 100%);
+  box-shadow: 0 8px 18px rgba(76, 68, 234, 0.24);
 }
 
 .stickers-panel {
@@ -1514,7 +2008,7 @@ onBeforeUnmount(() => {
   border: 1px solid #e1e0fb;
   border-radius: 12px;
   box-shadow: 0 10px 24px rgba(103, 100, 240, 0.12);
-  font-size: 16px;
+  font-size: var(--font-size-tooltip);
   font-weight: 700;
   line-height: 1.5;
   pointer-events: none;
@@ -1561,6 +2055,16 @@ onBeforeUnmount(() => {
   color: #6764f0;
 }
 
+.mic-button.active {
+  color: #e53935;
+  animation: mic-pulse 1s ease-in-out infinite;
+}
+
+@keyframes mic-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 .hidden-input {
   display: none;
 }
@@ -1590,7 +2094,7 @@ onBeforeUnmount(() => {
   background: transparent;
   border: 0;
   outline: none;
-  font-size: 16px;
+  font-size: var(--font-size-input);
 }
 
 .input-shell input::placeholder {
@@ -1612,6 +2116,492 @@ onBeforeUnmount(() => {
 
 .send-button:disabled {
   cursor: not-allowed;
+}
+
+.quick-menu-tab {
+  position: fixed;
+  top: 50%;
+  right: 10px;
+  z-index: 130;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  transform: translateY(-50%);
+  cursor: pointer;
+  transition: filter 0.2s ease, transform 0.2s ease;
+}
+
+.quick-menu-tab:hover {
+  filter: brightness(1.05);
+  transform: translateY(-50%) scale(1.04);
+}
+
+.quick-menu-bubble {
+  background: #fffbe6;
+  border: 2px solid #f5c842;
+  border-radius: 16px;
+  padding: 14px 12px;
+  font-size: 18px;
+  font-weight: 900;
+  color: #1e2f48;
+  line-height: 1.4;
+  text-align: center;
+  position: relative;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  letter-spacing: 0.05em;
+}
+
+.quick-menu-bubble::before {
+  content: '';
+  position: absolute;
+  bottom: -15px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-left: 11px solid transparent;
+  border-right: 11px solid transparent;
+  border-top: 15px solid #f5c842;
+}
+
+.quick-menu-bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-left: 9px solid transparent;
+  border-right: 9px solid transparent;
+  border-top: 12px solid #fffbe6;
+}
+
+.quick-menu-bird {
+  width: 90px;
+  height: 90px;
+  object-fit: contain;
+}
+
+.quick-menu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 124;
+  background: rgba(16, 24, 40, 0.2);
+  backdrop-filter: blur(2px);
+}
+
+.quick-menu-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: min(100vw, 620px);
+  height: 100%;
+  background: rgba(247, 249, 255, 0.98);
+  border-left: 1px solid var(--primary-200-p);
+  box-shadow: -20px 0 40px rgba(36, 50, 71, 0.1);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.quick-menu-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.quick-menu-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 18px 16px;
+  border-bottom: 1px solid #e8eef8;
+  background: #ffffff;
+  box-shadow: 0 2px 8px rgba(31, 42, 82, 0.08);
+  position: relative;
+  z-index: 1;
+}
+
+.quick-menu-header-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.quick-menu-header-mark {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  background: #dfe5ff;
+}
+
+.quick-menu-kicker {
+  display: inline-flex;
+  align-items: center;
+  color: #91a0b7;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.quick-menu-header h2 {
+  margin: 4px 0 0;
+  color: #243247;
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.quick-menu-close {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #91a0b7;
+  cursor: pointer;
+}
+
+.sidebar-section {
+  margin: 0;
+  padding: 20px 18px 16px;
+}
+
+.sidebar-section-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-size: 16px;
+  font-weight: 900;
+  color: #25364c;
+}
+
+.section-bar {
+  width: 6px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--primary-400-p);
+}
+
+
+.ai-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.ai-card {
+  width: auto;
+  border-radius: 20px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid var(--primary-200-p);
+  box-shadow: none;
+}
+
+.ai-card-hero {
+  height: 150px;
+  background: var(--primary-100-p);
+  border-bottom: 1px solid var(--primary-200-p);
+  display: grid;
+  place-items: center;
+}
+
+.ai-card-hero-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  padding: 0;
+}
+
+.ai-card-titlebar {
+  background: linear-gradient(180deg, #7f78ff 0%, #6764f0 100%);
+  padding: 11px 14px;
+  font-weight: 1000;
+  color: #ffffff;
+  border-bottom: 1px solid rgba(103, 100, 240, 0.55);
+}
+
+.ai-card-links {
+  padding: 0;
+  display: grid;
+}
+
+.ai-card-link {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 13px 14px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--primary-200-p);
+  border-radius: 0;
+  cursor: pointer;
+  color: #5f7188;
+  font-weight: 800;
+  font-size: 14px;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.ai-card-link:hover {
+  background: rgba(var(--primary-rgb-p), 0.06);
+  color: var(--primary-400-p);
+}
+
+.ai-card-link:last-child {
+  border-bottom: 0;
+}
+
+.ai-card-chevron {
+  width: 16px;
+  height: 16px;
+  opacity: 0.18;
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+}
+
+.ai-card-link:hover .ai-card-chevron {
+  opacity: 0.95;
+  transform: translateX(2px);
+}
+
+.common-links {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.common-link {
+  border: 1px solid var(--primary-200-p);
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 18px;
+  padding: 12px 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease;
+}
+
+.common-link:hover {
+  border-color: rgba(var(--primary-rgb-p), 0.35);
+  transform: translateY(-1px);
+}
+
+.common-link-icon {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: var(--primary-100-p);
+  color: var(--primary-400-p);
+  transition: transform 0.15s ease;
+  transform-origin: center;
+  will-change: transform;
+}
+
+.common-link-icon[data-icon='user'] {
+  background: rgba(103, 100, 240, 0.12);
+  color: var(--color-primary-400);
+}
+
+.common-link-icon[data-icon='doc'] {
+  background: rgba(83, 177, 205, 0.12);
+  color: var(--color-tertiary-500);
+}
+
+.common-link-icon[data-icon='pin'] {
+  background: rgba(241, 208, 70, 0.16);
+  color: var(--color-yellow-500);
+}
+
+.common-link-icon[data-icon='pulse'] {
+  background: rgba(31, 42, 82, 0.08);
+  color: var(--color-darkblue-500);
+}
+
+.common-link:hover .common-link-icon {
+  transform: scale(1.12);
+}
+
+.common-link:active .common-link-icon {
+  transform: scale(1.18);
+}
+
+.common-link-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.common-link-label {
+  font-size: 14px;
+  font-weight: 900;
+  color: #2b3d56;
+}
+
+.hot-list {
+  display: grid;
+  gap: 8px;
+}
+
+.hot-item {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 14px;
+  border-radius: 14px;
+  border: 1px solid #e8eaf0;
+  background: #ffffff;
+  color: #2b3d56;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 14px;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.hot-item:hover {
+  background: rgba(var(--primary-rgb-p), 0.05);
+  border-color: rgba(var(--primary-rgb-p), 0.3);
+  color: var(--primary-400-p);
+}
+
+.hot-item-text {
+  flex: 1;
+}
+
+.hot-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #f5a623;
+  flex-shrink: 0;
+}
+
+.hot-chevron {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: #b0bac8;
+}
+
+.hot-item:hover .hot-chevron {
+  color: var(--primary-400-p);
+}
+
+.hotline-card {
+  margin: 20px 18px 0;
+  padding: 16px 16px 14px;
+  border-radius: 20px;
+  border: 1px solid rgba(var(--primary-rgb-p), 0.28);
+  background: rgba(var(--primary-rgb-p), 0.06);
+  color: var(--primary-500-p);
+}
+
+.hotline-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 900;
+  color: var(--primary-500-p);
+  margin-bottom: 6px;
+}
+
+.hotline-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.hotline-number {
+  font-size: 22px;
+  font-weight: 1000;
+  letter-spacing: 0.02em;
+  color: var(--primary-500-p);
+  margin-bottom: 4px;
+}
+
+.hotline-sub {
+  font-size: 14px;
+  font-weight: 800;
+  color: rgba(95, 113, 136, 0.9);
+}
+
+.quick-menu-footer {
+  flex-shrink: 0;
+  padding: 0;
+  border-top: 1px solid #e8eef8;
+  background: #ffffff;
+  box-shadow: 0 -2px 8px rgba(31, 42, 82, 0.08);
+  position: relative;
+  z-index: 1;
+}
+
+.quick-menu-return {
+  display: block;
+  width: 100%;
+  padding: 16px;
+  color: #9aa7bf;
+  background: transparent;
+  border: 0;
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+  text-align: center;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.quick-menu-return:hover {
+  background: rgba(103, 100, 240, 0.07);
+  color: var(--primary-400-p);
+}
+
+.quick-menu-return:active {
+  background: rgba(103, 100, 240, 0.14);
+  color: var(--primary-400-p);
+}
+
+.quick-menu-slide-enter-active,
+.quick-menu-slide-leave-active {
+  transition: opacity 0.22s ease;
+}
+
+.quick-menu-slide-enter-active .quick-menu-panel,
+.quick-menu-slide-leave-active .quick-menu-panel {
+  transition: transform 0.22s ease;
+}
+
+.quick-menu-slide-enter-from,
+.quick-menu-slide-leave-to {
+  opacity: 0;
+}
+
+.quick-menu-slide-enter-from .quick-menu-panel,
+.quick-menu-slide-leave-to .quick-menu-panel {
+  transform: translateX(100%);
 }
 
 .feedback-overlay {
@@ -1637,14 +2627,14 @@ onBeforeUnmount(() => {
 
 .feedback-title {
   color: #1c1c1e;
-  font-size: 20px;
+  font-size: var(--font-size-modal-title);
   font-weight: 800;
 }
 
 .feedback-subtitle {
   margin-top: 8px;
   color: #8e8e93;
-  font-size: 16px;
+  font-size: var(--font-size-modal-body);
   line-height: 1.6;
 }
 
@@ -1672,7 +2662,7 @@ onBeforeUnmount(() => {
 }
 
 .feedback-option span {
-  font-size: 16px;
+  font-size: var(--font-size-button);
   font-weight: 700;
 }
 
@@ -1682,7 +2672,7 @@ onBeforeUnmount(() => {
   display: grid;
   place-items: center;
   border-radius: 999px;
-  font-size: 28px;
+  font-size: var(--font-size-feedback-icon);
   background: #f5f6ff;
 }
 
@@ -1705,7 +2695,7 @@ onBeforeUnmount(() => {
   color: #6764f0;
   background: transparent;
   border: 0;
-  font-size: 16px;
+  font-size: var(--font-size-button);
   font-weight: 700;
   cursor: pointer;
 }
@@ -1766,7 +2756,7 @@ onBeforeUnmount(() => {
   }
 
   .chat-body {
-    padding: 10px 12px 18px;
+    padding: 10px 12px 120px;
   }
 
   .message-stack {
@@ -1785,8 +2775,71 @@ onBeforeUnmount(() => {
     min-width: 220px;
   }
 
+  .font-size-switcher {
+    left: 12px;
+    right: 12px;
+    bottom: calc(var(--chat-footer-height, 0px) + 12px);
+  }
+
+  .font-size-button {
+    min-width: 34px;
+    padding: 8px 8px;
+  }
+
   .stickers-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .quick-menu-tab {
+    top: auto;
+    right: 8px;
+    bottom: 80px;
+    transform: none;
+  }
+
+  .quick-menu-tab:hover {
+    transform: scale(1.04);
+  }
+
+  .quick-menu-bubble {
+    font-size: 16px;
+    padding: 12px 10px;
+  }
+
+  .quick-menu-bird {
+    width: 76px;
+    height: 76px;
+  }
+
+  .quick-menu-panel {
+    width: 100vw;
+    padding: 0;
+  }
+
+  .quick-menu-header {
+    padding: 14px 14px 12px;
+  }
+
+  .sidebar-section {
+    padding: 14px 12px 0;
+  }
+
+  .ai-card-grid,
+  .common-links {
+    grid-template-columns: 1fr;
+  }
+
+  .ai-card-hero {
+    height: 118px;
+  }
+
+  .quick-menu-section {
+    padding: 12px 12px 8px;
+    border-radius: 0;
+  }
+
+  .hotline-card {
+    margin: 14px 12px 0;
   }
 }
 </style>
