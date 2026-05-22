@@ -928,6 +928,15 @@ onBeforeUnmount(() => {
         <aside class="quick-menu-panel" aria-label="常用選單">
           <div class="quick-menu-header">
             <div class="quick-menu-header-title">
+              <div class="quick-menu-badge" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M9 2.8h6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M12 2.8v2.1" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                  <path d="M6.4 7.7h11.2a2.2 2.2 0 0 1 2.2 2.2v7.1a2.2 2.2 0 0 1-2.2 2.2H6.4A2.2 2.2 0 0 1 4.2 17V9.9a2.2 2.2 0 0 1 2.2-2.2Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+                  <path d="M9.2 12.2h.01M14.8 12.2h.01" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+                  <path d="M9.2 15.4h5.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                </svg>
+              </div>
               <h2>1999 客服功能快捷區</h2>
             </div>
             <button type="button" class="quick-menu-close" aria-label="關閉常用選單" @click="closeQuickMenu">
@@ -2218,8 +2227,8 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 18px 18px 16px;
-  border-bottom: 1px solid #e8eef8;
+  padding: 16px 16px 14px;
+  border-bottom: 1px solid var(--primary-200-p);
   background: #ffffff;
   box-shadow: 0 2px 8px rgba(31, 42, 82, 0.08);
   position: relative;
@@ -2229,32 +2238,36 @@ onBeforeUnmount(() => {
 .quick-menu-header-title {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
+  font-weight: 1000;
+  color: #2b3d56;
+  font-size: 16px;
+  white-space: nowrap;
 }
 
-.quick-menu-header-mark {
-  width: 24px;
-  height: 24px;
+.quick-menu-badge {
+  width: 30px;
+  height: 30px;
   flex-shrink: 0;
-  border-radius: 6px;
-  background: #dfe5ff;
+  border-radius: 10px;
+  background: rgba(var(--primary-rgb-p), 0.14);
+  color: var(--primary-400-p);
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--primary-200-p);
 }
 
-.quick-menu-kicker {
-  display: inline-flex;
-  align-items: center;
-  color: #91a0b7;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
+.quick-menu-badge svg {
+  width: 18px;
+  height: 18px;
 }
 
 .quick-menu-header h2 {
-  margin: 4px 0 0;
-  color: #243247;
-  font-size: 18px;
-  font-weight: 900;
+  margin: 0;
+  color: #2b3d56;
+  font-size: 20px;
+  font-weight: 1000;
   line-height: 1.25;
 }
 

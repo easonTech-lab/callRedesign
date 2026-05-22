@@ -1,19 +1,14 @@
 import { createRouter, createWebHistory } from 'vue-router';
-import CustomerView from './views/CustomerView.vue';
 import SalesView from './views/SalesView.vue';
 import AiCustomerView from './views/AiCustomerView.vue';
+import VoiceSalesView from './views/VoiceSalesView.vue';
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
       path: '/',
-      redirect: { name: 'customer' }
-    },
-    {
-      path: '/customer',
-      name: 'customer',
-      component: CustomerView
+      redirect: { name: 'voice-sales' }
     },
     {
       path: '/sales',
@@ -24,6 +19,11 @@ const router = createRouter({
       path: '/ai-customer',
       name: 'ai-customer',
       component: AiCustomerView
+    },
+    {
+      path: '/voice-sales',
+      name: 'voice-sales',
+      component: VoiceSalesView
     }
   ]
 });

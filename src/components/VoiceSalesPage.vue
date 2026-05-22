@@ -11,6 +11,10 @@ const props = defineProps({
     type: String,
     default: ''
   },
+  caseTitle: {
+    type: String,
+    default: '民眾反映中正路123號交叉路口交通設計問題'
+  },
   initialMessages: {
     type: Array,
     required: true
@@ -72,6 +76,24 @@ const messages = ref(buildInitialMessages());
 const inputText = ref('');
 const showStickers = ref(false);
 const isRecording = ref(false);
+const interimText = ref('');
+const transcriptExpanded = ref(false);
+const callMuted = ref(false);
+const callOnHold = ref(false);
+const callTranscript = ref([
+  { speaker: '市民', text: '那個...就是我想問一下喔，風箏節的時候停車位要怎麼辦？' },
+  { speaker: '值機員', text: '先生您好，請問怎麼稱呼呢？' },
+  { speaker: '市民', text: '喔喔 我姓林' },
+  { speaker: '值機員', text: '林先生您好，風箏節期間我們有規劃幾個臨時停車場，請問您預計從哪個方向進來呢？' },
+  { speaker: '市民', text: '我從新竹火車站那邊過來' },
+  { speaker: '值機員', text: '了解，火車站附近有安排幾處臨時停車場，建議您可以前往東大路或中正路附近的指定停車區。' },
+  { speaker: '市民', text: '好那大概要走多遠？' },
+  { speaker: '值機員', text: '步行大約 10 到 15 分鐘，活動當天會有指引人員協助引導。' },
+  { speaker: '市民', text: '那有收費嗎？' },
+  { speaker: '值機員', text: '臨時停車場活動期間免費開放，請攜帶行照備查。' },
+  { speaker: '市民', text: '好的謝謝你喔' },
+  { speaker: '值機員', text: '不客氣，林先生，祝您活動愉快，有任何問題都可以再撥打 1999。' }
+]);
 const uploadError = ref('');
 const showFeedbackModal = ref(false);
 const chatEndRef = ref(null);
@@ -624,6 +646,9 @@ const switchToHuman = () => {
 
 const applyCopilotSuggestion = (text) => {
   inputText.value = typeof text === 'string' ? text : text?.content || '';
+  if (inputText.value.trim()) {
+    sendMessage();
+  }
 };
 
 const regenerateCopilotSuggestions = () => {
@@ -674,14 +699,37 @@ const toggleVoiceInput = () => {
   voiceRecognition = new SR();
   voiceRecognition.lang = 'zh-TW';
   voiceRecognition.continuous = false;
-  voiceRecognition.interimResults = false;
+  voiceRecognition.interimResults = true;
 
-  voiceRecognition.onstart = () => { isRecording.value = true; };
-  voiceRecognition.onend = () => { isRecording.value = false; };
-  voiceRecognition.onerror = () => { isRecording.value = false; };
+  voiceRecognition.onstart = () => {
+    isRecording.value = true;
+    interimText.value = '';
+    inputText.value = '';
+  };
+  voiceRecognition.onend = () => {
+    isRecording.value = false;
+    interimText.value = '';
+    if (inputText.value.trim()) {
+      callTranscript.value.push({ speaker: '值機員', text: inputText.value.trim() });
+      sendMessage();
+    }
+  };
+  voiceRecognition.onerror = () => {
+    isRecording.value = false;
+    interimText.value = '';
+  };
   voiceRecognition.onresult = (e) => {
-    const transcript = e.results[0][0].transcript;
-    inputText.value += transcript;
+    let interim = '';
+    let final = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) {
+        final += e.results[i][0].transcript;
+      } else {
+        interim += e.results[i][0].transcript;
+      }
+    }
+    if (final) { inputText.value += final; }
+    interimText.value = interim;
   };
 
   voiceRecognition.start();
@@ -871,394 +919,40 @@ onBeforeUnmount(() => {
       <h1>{{ title }}</h1>
     </header>
 
-    <section v-if="subtitle" class="route-subtitle">
-      <span>{{ subtitle }}</span>
-    </section>
-
     <div class="chat-layout">
       <section class="chat-column">
         <div class="fixed-watermark" aria-hidden="true">
           <img :src="withBase('/branding/hsinchu-logo.svg')" alt="" />
         </div>
+      </section>
 
-        <main class="chat-body">
-        <div
-          v-for="msg in messages"
-          :key="msg.id"
-          class="message-row"
-          :class="[
-            msg.sender === 'user' ? 'message-row-user' : 'message-row-agent',
-            msg.sender === 'system' ? 'message-row-system' : ''
-          ]"
-        >
-          <div v-if="msg.sender === 'agent'" class="avatar avatar-agent">
-            <img :src="agentAvatar" alt="客服頭像" class="avatar-image avatar-image-agent" />
+      <!-- 中央逐字稿面板：展開逐字稿後出現 -->
+      <section v-if="props.salesCopilot && transcriptExpanded" class="transcript-center-panel">
+        <div class="tcp-header">
+          <div class="tcp-title-area">
+            <svg viewBox="0 0 24 24" aria-hidden="true" class="tcp-mic-icon">
+              <rect x="9" y="3" width="6" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="1.7"/>
+              <path d="M5 11a7 7 0 0 0 14 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+              <line x1="12" y1="18" x2="12" y2="21" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+            </svg>
+            <span class="tcp-title">音轉字即時逐字稿</span>
+            <span class="tcp-live-badge">LIVE</span>
           </div>
-
-          <div v-if="msg.sender === 'system'" class="system-banner">
-            <span>{{ msg.text }}</span>
-            <span class="message-time">{{ msg.time }}</span>
-          </div>
-
-          <template v-else>
-            <div class="message-stack" :class="msg.sender === 'user' ? 'align-end' : 'align-start'">
-              <div class="message-line">
-                <span v-if="msg.sender === 'user'" class="message-time">{{ msg.time }}</span>
-
-                <div
-                  class="bubble"
-                  :class="[
-                    msg.sender === 'user' ? 'bubble-user' : 'bubble-agent',
-                    msg.type === 'sticker' ? 'bubble-sticker' : ''
-                  ]"
-                >
-                  <template v-if="msg.type === 'text'">{{ msg.text }}</template>
-                  <img
-                    v-else-if="msg.type === 'sticker'"
-                    :src="msg.content"
-                    :alt="msg.stickerName || 'sticker'"
-                    class="sticker-image"
-                  />
-                  <img v-else-if="msg.type === 'image'" :src="msg.content" alt="upload" class="upload-image" />
-                  <div v-else class="file-card">
-                    <span class="file-icon">📄</span>
-                    <span class="file-name">{{ msg.fileName }}</span>
-                  </div>
-                </div>
-
-                <span v-if="msg.sender === 'agent'" class="message-time">{{ msg.time }}</span>
-              </div>
-
-              <div
-                v-if="props.customerAi && msg.showCards"
-                ref="serviceSliderRef"
-                class="ai-service-slider"
-                aria-label="AI 常見服務"
-              >
-                <button
-                  type="button"
-                  class="ai-slider-button prev"
-                  aria-label="上一個"
-                  :disabled="!canScrollServicePrev"
-                  @click="scrollServiceCards(-1)"
-                >
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path
-                      d="M14.5 6.8 8.9 12l5.6 5.2"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2.2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    />
-                  </svg>
-                </button>
-
-                <div class="ai-service-viewport">
-                  <div ref="serviceTrackRef" class="ai-service-track" :style="serviceTransformStyle">
-                    <div v-for="card in serviceCards" :key="card.title" class="ai-card">
-                      <div class="ai-card-hero" aria-hidden="true">
-                        <img v-if="card.hero" :src="card.hero" :alt="card.title" class="ai-card-hero-image" />
-                        <div v-else class="ai-card-hero-fallback" :data-icon="card.icon">
-                          <div class="ai-card-hero-icon">
-                            <svg v-if="card.icon === 'pin'" viewBox="0 0 24 24">
-                              <path
-                                d="M12 21s7-4.3 7-10.1A7 7 0 0 0 5 10.9C5 16.7 12 21 12 21Z"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="1.8"
-                                stroke-linejoin="round"
-                              />
-                              <circle cx="12" cy="10.5" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8" />
-                            </svg>
-                            <svg v-else-if="card.icon === 'pulse'" viewBox="0 0 24 24">
-                              <path
-                                d="M3.5 12h4l2-5.2 4.1 12.4 2.3-7.2h4.6"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="1.9"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                              />
-                            </svg>
-                            <svg v-else viewBox="0 0 24 24">
-                              <path
-                                d="M7 3.8h7.8L19 8v12.2a1.8 1.8 0 0 1-1.8 1.8H7a2 2 0 0 1-2-2V5.8a2 2 0 0 1 2-2Z"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="1.8"
-                                stroke-linejoin="round"
-                              />
-                              <path
-                                d="M14.8 3.8V8H19"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="1.8"
-                                stroke-linejoin="round"
-                              />
-                            </svg>
-                          </div>
-                          <div class="ai-card-hero-title">{{ card.title }}</div>
-                        </div>
-                      </div>
-
-                      <div class="ai-card-titlebar">{{ card.title }}</div>
-                      <div class="ai-card-links">
-                        <button
-                          v-for="link in card.links"
-                          :key="link"
-                          type="button"
-                          class="ai-card-link"
-                          @click="sendText(link)"
-                        >
-                          <span>{{ link }}</span>
-                          <svg viewBox="0 0 24 24" aria-hidden="true" class="ai-card-chevron">
-                            <path
-                              d="M9 6.8 14.6 12 9 17.2"
-                              fill="none"
-                              stroke="currentColor"
-                              stroke-width="2.2"
-                              stroke-linecap="round"
-                              stroke-linejoin="round"
-                            />
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  class="ai-slider-button next"
-                  aria-label="下一個"
-                  :disabled="!canScrollServiceNext"
-                  @click="scrollServiceCards(1)"
-                >
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path
-                      d="M9.5 6.8 15.1 12l-5.6 5.2"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2.2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    />
-                  </svg>
-                </button>
-              </div>
-
-              <div
-                v-if="msg.sender === 'user'"
-                class="message-status"
-                :class="msg.status === 'read' ? 'status-read' : 'status-sent'"
-              >
-                <span>{{ msg.status === 'read' ? '已讀' : '送出' }}</span>
-                <span>{{ msg.status === 'read' ? '✓✓' : '✓' }}</span>
-              </div>
-            </div>
-
-            <div v-if="msg.sender === 'user'" class="avatar avatar-user">
-              <img :src="userAvatar" alt="使用者頭像" class="avatar-image avatar-image-user" />
-            </div>
-          </template>
+          <button type="button" class="tcp-collapse-btn" aria-label="收合逐字稿" @click="transcriptExpanded = false">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
         </div>
-
-        <div v-if="props.customerAi && isTyping" class="message-row message-row-agent">
-          <div class="avatar avatar-agent">
-            <img :src="agentAvatar" alt="客服頭像" class="avatar-image avatar-image-agent" />
-          </div>
-          <div class="message-stack align-start">
-            <div class="message-line">
-              <div class="bubble bubble-agent typing-bubble" aria-label="AI 輸入中">
-                <span class="typing-dot"></span>
-                <span class="typing-dot delay-1"></span>
-                <span class="typing-dot delay-2"></span>
-              </div>
+        <div class="tcp-body">
+          <div v-for="(entry, i) in callTranscript" :key="i" class="tcp-entry">
+            <div class="tcp-speaker" :class="entry.speaker === '市民' ? 'tcp-citizen' : 'tcp-staff'">
+              <span class="tcp-dot"></span>
+              <span>{{ entry.speaker }}</span>
             </div>
+            <div class="tcp-text">{{ entry.text }}</div>
           </div>
         </div>
-
-        <div ref="chatEndRef"></div>
-        </main>
-
-        <transition name="panel-slide">
-          <section v-if="showStickers" ref="stickersPanelRef" class="stickers-panel">
-            <div class="stickers-header">
-              <span>快捷貼圖</span>
-              <button type="button" class="icon-button subtle-button" @click="showStickers = false">✕</button>
-            </div>
-            <div class="stickers-grid">
-              <button
-                v-for="sticker in stickers"
-                :key="sticker.id"
-                type="button"
-                class="sticker-button"
-                @click="sendSticker(sticker)"
-              >
-                <img :src="sticker.src" :alt="sticker.name" class="sticker-picker-image" />
-              </button>
-            </div>
-          </section>
-        </transition>
-
-        <div v-if="uploadError" class="error-toast" role="alert" aria-live="assertive">
-          <span>⚠</span>
-          <span>{{ uploadError }}</span>
-        </div>
-
-        <div class="font-size-switcher" role="group" aria-label="字型大小切換">
-          <div class="font-size-switcher-controls">
-            <button
-              v-for="option in fontSizeOptions"
-              :key="option.value"
-              type="button"
-              class="font-size-button"
-              :class="{ active: fontSize === option.value }"
-              :aria-pressed="fontSize === option.value"
-              @click="setFontSize(option.value)"
-            >
-              {{ option.label }}
-            </button>
-          </div>
-        </div>
-
-        <footer ref="chatFooterRef" class="chat-footer" :class="{ 'sales-footer': salesMode }">
-          <section v-if="salesMode" class="quick-replies" :class="{ collapsed: quickRepliesCollapsed }">
-            <div class="quick-replies-header">
-              <span>值機員快速回覆模板</span>
-              <div class="quick-replies-right">
-                <div class="quick-replies-tools">
-                  <span
-                    class="quick-replies-note"
-                    style="color: #5f7188; font-size: 13px; font-weight: 400; letter-spacing: 0; opacity: 0.92;"
-                  >
-                    點擊即可快速插入
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  class="quick-replies-toggle"
-                  :aria-label="quickRepliesCollapsed ? '展開快速回覆模板' : '收合快速回覆模板'"
-                  @click="toggleQuickReplies"
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    aria-hidden="true"
-                    class="quick-replies-toggle-icon"
-                    :class="{ collapsed: quickRepliesCollapsed }"
-                  >
-                    <path
-                      d="M7 10.5 12 15l5-4.5"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="1.9"
-                    />
-                  </svg>
-                </button>
-              </div>
-            </div>
-            <div v-if="!quickRepliesCollapsed" class="quick-replies-list">
-              <button
-                v-for="template in quickReplies"
-                :key="template"
-                type="button"
-                class="quick-reply-chip"
-                @click="insertQuickReply(template)"
-              >
-                {{ template }}
-              </button>
-            </div>
-          </section>
-
-          <div class="composer">
-            <div class="upload-trigger">
-              <button type="button" class="icon-button" aria-label="上傳附件" @click="triggerFileUpload">
-                <svg viewBox="0 0 24 24" aria-hidden="true" class="toolbar-icon">
-                  <path
-                    d="M8.15 12.85 15.5 5.54a3.35 3.35 0 0 1 4.74 4.74l-8.58 8.57a5.15 5.15 0 1 1-7.28-7.28l8.05-8.04"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="1.55"
-                  />
-                </svg>
-              </button>
-              <div class="upload-tooltip">上傳規範：檔案 5MB 內 | 格式：JPG, PNG, PDF, Word</div>
-            </div>
-            <button
-              type="button"
-              class="icon-button"
-              aria-label="開啟貼圖"
-              :class="{ active: showStickers }"
-              @click="showStickers = !showStickers"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true" class="toolbar-icon">
-                <circle cx="12" cy="12" r="8.25" fill="none" stroke="currentColor" stroke-width="1.7" />
-                <circle cx="9" cy="10" r="0.95" fill="currentColor" />
-                <circle cx="15" cy="10" r="0.95" fill="currentColor" />
-                <path
-                  d="M8.4 13.6c.96 1.25 2.17 1.88 3.6 1.88s2.64-.63 3.6-1.88"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-linecap="round"
-                  stroke-width="1.7"
-                />
-              </svg>
-            </button>
-
-            <label class="sr-only" for="chat-file-upload">選擇要上傳的檔案</label>
-            <input
-              id="chat-file-upload"
-              ref="fileInputRef"
-              type="file"
-              class="hidden-input"
-              @change="handleFileUpload"
-            />
-
-            <div class="input-shell">
-              <label class="sr-only" for="chat-message-input">輸入訊息內容</label>
-              <input
-                id="chat-message-input"
-                v-model="inputText"
-                type="text"
-                :placeholder="salesMode ? '輸入回覆內容或套用模板...' : '請輸入訊息...'"
-                aria-describedby="chat-input-hint"
-                @keydown.enter="sendMessage"
-              />
-            </div>
-
-            <button
-              type="button"
-              class="icon-button mic-button"
-              :class="{ active: isRecording }"
-              :aria-label="isRecording ? '停止語音輸入' : '語音輸入'"
-              @click="toggleVoiceInput"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true" class="toolbar-icon">
-                <rect x="9" y="3" width="6" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="1.7"/>
-                <path d="M5 11a7 7 0 0 0 14 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-                <line x1="12" y1="18" x2="12" y2="21" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-                <line x1="9" y1="21" x2="15" y2="21" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-              </svg>
-            </button>
-
-            <button
-              type="button"
-              class="send-button"
-              :disabled="!canSend"
-              aria-label="送出訊息"
-              @click="sendMessage"
-            >
-              ➤
-            </button>
-          </div>
-
-          <div id="chat-input-hint" class="sr-only">按 Enter 送出訊息</div>
-        </footer>
       </section>
 
       <aside v-if="props.customerAi" class="chat-sidebar">
@@ -1408,6 +1102,41 @@ onBeforeUnmount(() => {
       </aside>
 
       <aside v-if="props.salesCopilot" class="copilot-sidebar">
+        <!-- Case bar -->
+        <div class="call-case-bar copilot-case-bar">
+          <button type="button" class="case-summary-btn">
+            <svg viewBox="0 0 24 24" aria-hidden="true" class="case-summary-icon">
+              <path d="M9 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+              <path d="M9 13h6M9 17h4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+            </svg>
+            <span>目前問題摘要</span>
+          </button>
+          <span class="case-title-text">{{ caseTitle }}</span>
+        </div>
+
+        <!-- Voice status mini section -->
+        <div class="copilot-voice-mini">
+          <div class="cvm-header">
+            <button type="button" class="cvm-expand-btn" @click="transcriptExpanded = !transcriptExpanded">
+              <template v-if="!transcriptExpanded">← 展開逐字稿</template>
+              <template v-else>
+                收合
+                <svg viewBox="0 0 24 24" aria-hidden="true" class="cvm-list-icon">
+                  <line x1="4" y1="7" x2="20" y2="7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                  <line x1="4" y1="12" x2="20" y2="12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                  <line x1="4" y1="17" x2="20" y2="17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                </svg>
+              </template>
+            </button>
+            <div class="cvm-title-area">
+              <span class="cvm-live-badge">音轉字即時狀況</span>
+            </div>
+          </div>
+          <div v-if="!transcriptExpanded" class="cvm-preview-row">
+            <span class="cvm-preview-text">最後轉譯：{{ callTranscript[callTranscript.length - 1].speaker }}「{{ callTranscript[callTranscript.length - 1].text.slice(0, 18) }}...」</span>
+          </div>
+        </div>
+
         <div class="copilot-header">
           <div class="copilot-title">
             <div class="copilot-badge" aria-hidden="true">
@@ -1794,7 +1523,7 @@ onBeforeUnmount(() => {
   top: 0;
   left: 0;
   right: 0;
-  bottom: var(--chat-footer-height, 0px);
+  bottom: 0;
   z-index: 0;
   display: flex;
   align-items: center;
@@ -1824,6 +1553,476 @@ onBeforeUnmount(() => {
   position: relative;
   z-index: 1;
 }
+
+/* ── Case info bar ── */
+.call-case-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 16px 14px;
+  background: #ffffff;
+  border-bottom: 1px solid #e8eef8;
+  font-size: 16px;
+  font-weight: 600;
+  color: #4a5568;
+}
+
+.copilot-case-bar {
+  flex-shrink: 0;
+}
+
+/* ── Voice status mini (right panel) ── */
+.copilot-voice-mini {
+  flex-shrink: 0;
+  background: #f8f9fc;
+  border-bottom: 1px solid #e8eef8;
+  padding: 10px 16px;
+}
+
+.cvm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cvm-title-area {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cvm-mic-icon {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  color: #6764f0;
+}
+
+.cvm-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #2b3d56;
+  white-space: nowrap;
+}
+
+.cvm-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #22c55e;
+  white-space: nowrap;
+}
+
+.cvm-live-badge::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2);
+  animation: status-blink 2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+.cvm-expand-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  background: #ffffff;
+  border: 1px solid #d0d8e8;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #6764f0;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.cvm-expand-btn:hover {
+  background: #eaeafd;
+  border-color: #6764f0;
+}
+
+.cvm-list-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.cvm-preview-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.cvm-preview-text {
+  font-size: 16px;
+  color: #6b7a90;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.cvm-online-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #22c55e;
+  white-space: nowrap;
+}
+
+.cvm-online-badge::before {
+  content: '●';
+  font-size: 8px;
+}
+
+.case-summary-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  background: #7133EA;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.case-summary-icon {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
+.case-title-text {
+  flex: 1;
+  font-size: 16px;
+  font-weight: 700;
+  color: #2b3d56;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.case-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #22c55e;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.15);
+  flex-shrink: 0;
+}
+
+.case-number {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 400;
+  color: #9aa7bf;
+  white-space: nowrap;
+}
+
+/* ── Transcript panel ── */
+.voice-transcript-panel {
+  flex-shrink: 0;
+  background: #ffffff;
+  border-bottom: 1px solid #e8eef8;
+}
+
+.voice-transcript-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-size: 16px;
+  font-weight: 800;
+  color: #2b3d56;
+}
+
+.vt-header-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: #6764f0;
+}
+
+.vt-title {
+  flex: 1;
+}
+
+.vt-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.vt-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #22c55e;
+}
+.vt-badge::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #22c55e;
+  box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.12);
+  flex-shrink: 0;
+}
+
+.vt-chevron {
+  width: 16px;
+  height: 16px;
+  color: #9aa7bf;
+  transition: transform 0.2s ease;
+}
+
+.vt-chevron.rotated {
+  transform: rotate(-90deg);
+}
+
+.voice-transcript-body {
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 8px 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.transcript-entry {
+  font-size: 16px;
+  line-height: 1.6;
+  color: #3a4a5c;
+}
+
+.transcript-speaker {
+  font-weight: 800;
+  margin-right: 2px;
+}
+
+.transcript-speaker.citizen { color: #6764f0; }
+.transcript-speaker.staff   { color: #2b3d56; }
+
+/* ── Transcript center panel ── */
+.transcript-center-panel {
+  display: flex;
+  flex-direction: column;
+  width: 360px;
+  flex-shrink: 0;
+  background: #ffffff;
+  border-left: 1px solid #e8eef8;
+  border-right: 1px solid #e8eef8;
+  overflow: hidden;
+}
+
+.tcp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #e8eef8;
+  background: #ffffff;
+  flex-shrink: 0;
+}
+
+.tcp-title-area {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tcp-mic-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: #6764f0;
+}
+
+.tcp-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: #2b3d56;
+  white-space: nowrap;
+}
+
+.tcp-live-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  background: #dcfce7;
+  color: #16a34a;
+  font-size: 16px;
+  font-weight: 700;
+  border-radius: 4px;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.tcp-collapse-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: #f1f3f8;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  flex-shrink: 0;
+  color: #6b7a90;
+  transition: background 0.15s ease;
+}
+
+.tcp-collapse-btn:hover {
+  background: #e4e8f0;
+  color: #2b3d56;
+}
+
+.tcp-collapse-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.tcp-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tcp-entry {
+  background: #f8f9fc;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.tcp-speaker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.tcp-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.tcp-staff .tcp-dot  { background: #6764f0; }
+.tcp-citizen .tcp-dot { background: #f59e0b; }
+
+.tcp-staff  { color: #2b3d56; }
+.tcp-citizen { color: #d97706; }
+
+.tcp-text {
+  font-size: 16px;
+  line-height: 1.65;
+  color: #3a4a5c;
+}
+
+/* ── Call footer ── */
+.call-footer {
+  background: #ffffff;
+  border-top: 1px solid #e8eef8;
+  box-shadow: 0 -2px 12px rgba(36, 50, 71, 0.07);
+}
+
+.call-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 16px 2px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #4a5568;
+}
+
+.call-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #22c55e;
+  flex-shrink: 0;
+  animation: status-blink 2s ease-in-out infinite;
+}
+
+@keyframes status-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.call-controls {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  padding: 4px 16px 8px;
+}
+
+.call-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: #f1f3f8;
+  border-radius: 14px;
+  padding: 7px 20px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #2b3d56;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  min-width: 76px;
+}
+
+.call-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.call-btn:hover { background: #e4e8f0; }
+.call-btn.active { background: #e8e7ff; color: #6764f0; }
+
+.call-btn-hangup {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.call-btn-hangup:hover { background: #fecaca; }
 
 .chat-header {
   flex-shrink: 0;
@@ -1896,6 +2095,7 @@ onBeforeUnmount(() => {
   flex: 1;
   overflow-y: auto;
   padding: 8px 16px 112px;
+  position: relative;
 }
 
 .chat-sidebar {
@@ -1919,9 +2119,14 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
   border-left: 1px solid var(--primary-200-p);
   background: rgba(255, 255, 255, 0.96);
-  font-size: var(--font-size-body);
+  font-size: 16px;
   font-weight: 400;
   line-height: 1.4;
+  --font-size-panel-title: 16px;
+  --font-size-panel-subtitle: 16px;
+  --font-size-card: 16px;
+  --font-size-card-action: 16px;
+  --font-size-tab: 16px;
 }
 
 @media (min-width: 1024px) {
@@ -2608,6 +2813,7 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  color: #22c55e;
 }
 
 .copilot-status-dot {
