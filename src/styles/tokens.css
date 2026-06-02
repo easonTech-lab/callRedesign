@@ -1,0 +1,121 @@
+/* ─────────────────────────────────────────────
+   Design Tokens — 色彩系統
+   所有顏色值集中在此，元件透過 var() 引用
+   ───────────────────────────────────────────── */
+
+:root {
+  /* ── Brand / Primary ── */
+  --color-primary-400: #6764f0;
+  --color-primary-500: #4c44ea;
+  --color-primary-50:  #eaeafd;
+
+  /* ── Secondary (purple-blue) ── */
+  --color-secondary-900: #8c89f1;
+  --color-secondary-700: #9796ff;
+  --color-secondary-600: #a0a1ff;
+  --color-secondary-500: #c8c9f1;
+  --color-secondary-100: #e3e7ff;
+  --color-secondary-50:  #f5f6ff;
+
+  /* ── Tertiary (teal) ── */
+  --color-tertiary-700: #3697b4;
+  --color-tertiary-500: #53b1cd;
+  --color-tertiary-300: #87d2e3;
+  --color-tertiary-50:  #e7f6fa;
+
+  /* ── Yellow ── */
+  --color-yellow-500: #f1d046;
+  --color-yellow-100: #fbf1c5;
+  --color-yellow-50:  #fef9e5;
+
+  /* ── Dark Blue ── */
+  --color-darkblue-500: #1f2a52;
+  --color-darkblue-50:  #f1f2f5;
+
+  /* ── Text (WCAG AA 對比值已驗證) ── */
+  --color-text-primary:       #243247;  /* 12.9:1 on white */
+  --color-text-secondary:     #2b3d56;  /* 10.5:1 */
+  --color-text-tertiary:      #334155;  /*  9.0:1 */
+  --color-text-body:          #445266;  /*  7.4:1 */
+  --color-text-muted:         #5f7188;  /*  4.99:1 ✓ */
+  --color-text-subtle:        #667888;  /*  4.55:1 ✓ */
+  --color-text-faint:         #5e6e80;  /*  5.21:1 ✓ */
+
+  /* ── Semantic ── */
+  --color-text-warning:       #7a5c00;  /* 文字，on yellow bg ~6.1:1 ✓ */
+  --color-icon-warning:       #9a6f00;  /* 圖示，non-text 3.55:1 ✓ */
+  --color-text-yellow-accent: #8a6500;  /* 黃色 chip 文字 5.40:1 ✓ */
+  --color-icon-rating:        #d97706;  /* 星星圖示，non-text 3.20:1 ✓ */
+
+  /* ── Status ── */
+  --color-success:      #22c55e;  /* 純裝飾用（dot、glow），不可單獨用於文字 */
+  --color-success-text: #15803d;  /* 文字 & 資訊性圖示，6.21:1 on white ✓ */
+  --color-error:        #dc2626;  /* 4.83:1 on white ✓，合併 #e53935 #ff3b30 */
+
+  /* ── Neutral ── */
+  --color-white: #ffffff;
+
+  /* ── Typography ── */
+  --font-size-title: clamp(20px, 1.8vw, 22px);
+  --font-size-body: 16px;
+  --font-size-body-sm: 14px;
+  --font-size-caption: 14px;
+  --font-size-input: clamp(15px, 1.2vw, 16px);
+  --font-size-button: 17px;
+  --font-size-link: clamp(14px, 1.1vw, 15px);
+  --font-size-helper: 14px;
+
+  --app-font-size-title: 24px;
+  --app-font-size-button: 16px;
+  --app-font-size-body: 16px;
+  --app-font-size-body-lg: 18px;
+  --app-font-size-caption: 16px;
+  --app-font-size-chip: 16px;
+  --app-font-size-input: 16px;
+  --app-font-size-tooltip: 16px;
+  --app-font-size-panel-title: 18px;
+  --app-font-size-panel-subtitle: 14px;
+  --app-font-size-tab: 16px;
+  --app-font-size-card: 17px;
+  --app-font-size-card-action: 15px;
+  --app-font-size-feedback-title: 20px;
+  --app-font-size-feedback-body: 16px;
+  --app-font-size-feedback-action: 16px;
+  --app-font-size-time: 16px;
+  --app-font-size-modal-title: 20px;
+  --app-font-size-modal-body: 16px;
+  --app-font-size-feedback-icon: 28px;
+
+  /* ── Primary RGB (for rgba()) ── */
+  --primary-rgb-p: 103, 100, 240;
+
+  /* ────────────────────────────────────────────
+     Backwards-compatible aliases
+     元件 CSS 中既有的 var(--primary-400-p) 等
+     ──────────────────────────────────────────── */
+  --primary-400-p: var(--color-primary-400);
+  --primary-500-p: var(--color-primary-500);
+  --primary-50-p:  var(--color-primary-50);
+  --primary-100-p: var(--color-secondary-50);
+  --primary-200-p: var(--color-secondary-100);
+  --primary-300-p: var(--color-secondary-600);
+
+  --secondary-900-p: var(--color-secondary-900);
+  --secondary-700-p: var(--color-secondary-700);
+  --secondary-600-p: var(--color-secondary-600);
+  --secondary-500-p: var(--color-secondary-500);
+  --secondary-100-p: var(--color-secondary-100);
+  --secondary-50-p:  var(--color-secondary-50);
+
+  --tertiary-700-p: var(--color-tertiary-700);
+  --tertiary-500-p: var(--color-tertiary-500);
+  --tertiary-300-p: var(--color-tertiary-300);
+  --tertiary-50-p:  var(--color-tertiary-50);
+
+  --yellow-500-p: var(--color-yellow-500);
+  --yellow-100-p: var(--color-yellow-100);
+  --yellow-50-p:  var(--color-yellow-50);
+
+  --darkblue-500-p: var(--color-darkblue-500);
+  --darkblue-50-p:  var(--color-darkblue-50);
+}

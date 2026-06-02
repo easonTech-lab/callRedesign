@@ -1,0 +1,140 @@
+/* ─────────────────────────────────────────────
+   Global Resets & Base Styles
+   ───────────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family:
+    "Noto Sans TC",
+    "PingFang TC",
+    "Microsoft JhengHei",
+    sans-serif;
+  background: linear-gradient(180deg, #eaeafd 0%, #ffffff 100%);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+/* 2.4.7 Focus Visible — 固態顏色，對比值 6.28:1 on white ✓ */
+button:focus-visible,
+input:focus-visible,
+a:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 3px solid var(--color-primary-500);
+  outline-offset: 2px;
+}
+
+.purple-action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--purple-action-gap, 8px);
+  width: var(--purple-action-width, auto);
+  min-height: var(--purple-action-min-height, 48px);
+  margin-top: var(--purple-action-margin-top, 0);
+  padding: var(--purple-action-padding, 14px 16px);
+  color: var(--purple-action-color, #ffffff);
+  background: var(
+    --purple-action-background,
+    linear-gradient(180deg, #706df4 0%, #635cf1 100%)
+  );
+  border: 0;
+  border-radius: var(--purple-action-radius, 12px);
+  box-shadow: var(--purple-action-shadow, none);
+  font-size: var(--purple-action-font-size, var(--font-size-card-action));
+  font-weight: var(--purple-action-font-weight, 900);
+  line-height: 1;
+  letter-spacing: var(--purple-action-letter-spacing, 0);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    transform 0.15s ease,
+    filter 0.15s ease,
+    color 0.15s ease;
+}
+
+.purple-action-button:hover:not(:disabled) {
+  color: var(--purple-action-color-hover, #ffffff);
+  background: var(
+    --purple-action-background-hover,
+    linear-gradient(180deg, #5f5bf0 0%, #524bf0 100%)
+  );
+  filter: brightness(1.02);
+  transform: translateY(-1px);
+}
+
+.purple-action-button:active:not(:disabled) {
+  color: var(--purple-action-color-active, #ffffff);
+  background: var(
+    --purple-action-background-active,
+    linear-gradient(180deg, #4a43e6 0%, #403adf 100%)
+  );
+  filter: brightness(0.99);
+  transform: translateY(1px);
+}
+
+.purple-action-button:focus-visible {
+  outline: 3px solid var(--primary-500-p);
+  outline-offset: 3px;
+}
+
+.purple-action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+  box-shadow: none;
+  filter: saturate(0.95);
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .purple-action-button {
+    transition: none;
+  }
+}
+
+/* 2.4.1 Skip to Main Content — 僅在鍵盤焦點時顯示 */
+.skip-to-main {
+  position: absolute;
+  top: -100%;
+  left: 16px;
+  z-index: 9999;
+  padding: 10px 20px;
+  background: var(--color-primary-500);
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 700;
+  border-radius: 0 0 10px 10px;
+  text-decoration: none;
+  transition: top 0.18s ease;
+}
+
+.skip-to-main:focus {
+  top: 0;
+  outline: 3px solid #ffffff;
+  outline-offset: 2px;
+}
+
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+#app {
+  min-height: 100vh;
+}

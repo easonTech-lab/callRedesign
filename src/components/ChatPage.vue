@@ -72,6 +72,7 @@ const messages = ref(buildInitialMessages());
 const inputText = ref('');
 const showStickers = ref(false);
 const isRecording = ref(false);
+const uploadTooltipVisible = ref(false);
 const uploadError = ref('');
 const showFeedbackModal = ref(false);
 const chatEndRef = ref(null);
@@ -89,8 +90,16 @@ const serviceViewportWidth = ref(0);
 const serviceMaxOffset = ref(0);
 const copilotMobileOpen = ref(false);
 const activeTab = ref('formal');
+const copilotTabs = [
+  { id: 'formal', label: '正式版' },
+  { id: 'friendly', label: '親切版' },
+  { id: 'sop', label: 'SOP版' },
+  { id: 'short', label: '簡短版' }
+];
+const copilotTabRefs = ref([]);
 const copilotVariantIndex = ref(0);
 const copilotRefreshTick = ref(0);
+const copilotRefreshing = ref(false);
 const recommendationData = {
   formal: [
     [
@@ -347,8 +356,48 @@ const copilotSuggestions = computed(() =>
     refreshStamp: copilotRefreshTick.value
   }))
 );
+const setCopilotTabRef = (element, index) => {
+  if (element) {
+    copilotTabRefs.value[index] = element;
+  }
+};
+
+const activateCopilotTab = async (tabId, shouldFocus = false) => {
+  activeTab.value = tabId;
+
+  if (!shouldFocus) {
+    return;
+  }
+
+  await nextTick();
+  const index = copilotTabs.findIndex((tab) => tab.id === tabId);
+  if (index >= 0) {
+    copilotTabRefs.value[index]?.focus();
+  }
+};
+
+const handleCopilotTabKeydown = async (event, index) => {
+  const lastIndex = copilotTabs.length - 1;
+  let nextIndex = index;
+
+  if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+    nextIndex = index === lastIndex ? 0 : index + 1;
+  } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+    nextIndex = index === 0 ? lastIndex : index - 1;
+  } else if (event.key === 'Home') {
+    nextIndex = 0;
+  } else if (event.key === 'End') {
+    nextIndex = lastIndex;
+  } else {
+    return;
+  }
+
+  event.preventDefault();
+  await activateCopilotTab(copilotTabs[nextIndex].id, true);
+};
 let uploadErrorTimer = null;
 let readStatusTimer = null;
+let copilotRefreshTimer = null;
 
 const stickers = [
   { id: 'front', name: '皮卡正面', src: withBase('/stickers/pika-front.png') },
@@ -627,11 +676,25 @@ const applyCopilotSuggestion = (text) => {
 };
 
 const regenerateCopilotSuggestions = () => {
-  const variants = recommendationData[activeTab.value] ?? [];
-  if (variants.length > 0) {
-    copilotVariantIndex.value = (copilotVariantIndex.value + 1) % variants.length;
+  if (copilotRefreshing.value) {
+    return;
   }
-  copilotRefreshTick.value += 1;
+
+  copilotRefreshing.value = true;
+
+  if (copilotRefreshTimer) {
+    clearTimeout(copilotRefreshTimer);
+  }
+
+  copilotRefreshTimer = window.setTimeout(() => {
+    const variants = recommendationData[activeTab.value] ?? [];
+    if (variants.length > 0) {
+      copilotVariantIndex.value = (copilotVariantIndex.value + 1) % variants.length;
+    }
+    copilotRefreshTick.value += 1;
+    copilotRefreshing.value = false;
+    copilotRefreshTimer = null;
+  }, 420);
 };
 
 const simulateCopilotUserMessage = () => {
@@ -716,7 +779,7 @@ const handleFileUpload = (event) => {
   ];
 
   if (file.size > maxSize) {
-    showError('檔案超過 5MB 限制');
+    showError('檔案超過 5MB 限制，請選擇小於 5MB 的檔案');
     event.target.value = '';
     return;
   }
@@ -854,6 +917,10 @@ onBeforeUnmount(() => {
     clearTimeout(readStatusTimer);
   }
 
+  if (copilotRefreshTimer) {
+    clearTimeout(copilotRefreshTimer);
+  }
+
   window.removeEventListener('resize', updateServiceMetrics);
   window.removeEventListener('keydown', handleGlobalKeydown);
 
@@ -866,6 +933,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="app-shell" :class="[fontSizeClass, { 'copilot-mobile-open': copilotMobileOpen }]">
+    <a href="#chat-main" class="skip-to-main">跳至主要聊天內容</a>
     <header class="chat-header">
       <button type="button" class="end-chat-button" @click="openFeedbackModal">結束對話</button>
       <h1>{{ title }}</h1>
@@ -881,7 +949,7 @@ onBeforeUnmount(() => {
           <img :src="withBase('/branding/hsinchu-logo.svg')" alt="" />
         </div>
 
-        <main class="chat-body">
+        <main id="chat-main" class="chat-body" tabindex="-1">
         <div
           v-for="msg in messages"
           :key="msg.id"
@@ -1131,7 +1199,7 @@ onBeforeUnmount(() => {
                 <div class="quick-replies-tools">
                   <span
                     class="quick-replies-note"
-                    style="color: #5f7188; font-size: 13px; font-weight: 400; letter-spacing: 0; opacity: 0.92;"
+                    style="color: var(--color-text-muted); font-size: 14px; font-weight: 400; letter-spacing: 0; opacity: 0.92;"
                   >
                     點擊即可快速插入
                   </span>
@@ -1175,7 +1243,18 @@ onBeforeUnmount(() => {
 
           <div class="composer">
             <div class="upload-trigger">
-              <button type="button" class="icon-button" aria-label="上傳附件" @click="triggerFileUpload">
+              <button
+                type="button"
+                class="icon-button"
+                aria-describedby="upload-tooltip"
+                aria-label="上傳附件"
+                @click="triggerFileUpload"
+                @mouseenter="uploadTooltipVisible = true"
+                @mouseleave="uploadTooltipVisible = false"
+                @focus="uploadTooltipVisible = true"
+                @blur="uploadTooltipVisible = false"
+                @keydown.esc.stop="uploadTooltipVisible = false"
+              >
                 <svg viewBox="0 0 24 24" aria-hidden="true" class="toolbar-icon">
                   <path
                     d="M8.15 12.85 15.5 5.54a3.35 3.35 0 0 1 4.74 4.74l-8.58 8.57a5.15 5.15 0 1 1-7.28-7.28l8.05-8.04"
@@ -1187,7 +1266,14 @@ onBeforeUnmount(() => {
                   />
                 </svg>
               </button>
-              <div class="upload-tooltip">上傳規範：檔案 5MB 內 | 格式：JPG, PNG, PDF, Word</div>
+              <div
+                id="upload-tooltip"
+                role="tooltip"
+                class="upload-tooltip"
+                :class="{ 'is-visible': uploadTooltipVisible }"
+                @mouseenter="uploadTooltipVisible = true"
+                @mouseleave="uploadTooltipVisible = false"
+              >上傳規範：檔案 5MB 內 | 格式：JPG, PNG, PDF, Word</div>
             </div>
             <button
               type="button"
@@ -1463,7 +1549,12 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="copilot-body">
-          <section class="copilot-section">
+          <section
+            class="copilot-section"
+            role="tabpanel"
+            id="copilot-recommendation-panel"
+            :aria-labelledby="`copilot-tab-${activeTab}`"
+          >
             <div class="copilot-tab-shell">
               <div class="copilot-tab-header">
                 <h3 class="copilot-tab-title">
@@ -1474,19 +1565,21 @@ onBeforeUnmount(() => {
                 </h3>
               </div>
 
-              <div class="copilot-tabs">
+              <div class="copilot-tabs" role="tablist" aria-label="推薦回覆類型">
                 <button
-                  v-for="tab in [
-                    { id: 'formal', label: '正式版' },
-                    { id: 'friendly', label: '親切版' },
-                    { id: 'sop', label: 'SOP版' },
-                    { id: 'short', label: '簡短版' }
-                  ]"
+                  v-for="(tab, index) in copilotTabs"
                   :key="tab.id"
+                  :ref="(element) => setCopilotTabRef(element, index)"
                   type="button"
+                  :id="`copilot-tab-${tab.id}`"
                   class="copilot-tab"
                   :class="{ active: activeTab === tab.id }"
-                  @click="activeTab = tab.id"
+                  role="tab"
+                  :aria-selected="activeTab === tab.id"
+                  :aria-controls="'copilot-recommendation-panel'"
+                  :tabindex="activeTab === tab.id ? 0 : -1"
+                  @click="activateCopilotTab(tab.id)"
+                  @keydown="handleCopilotTabKeydown($event, index)"
                 >
                   {{ tab.label }}
                 </button>
@@ -1495,7 +1588,16 @@ onBeforeUnmount(() => {
 
             <div class="copilot-recommendation-head">
               <span class="copilot-recommendation-count">AI 推薦選項 ({{ copilotSuggestions.length }})</span>
-              <button type="button" class="copilot-refresh" @click="regenerateCopilotSuggestions">重新生成</button>
+              <button
+                type="button"
+                class="copilot-refresh"
+                :class="{ loading: copilotRefreshing }"
+                :disabled="copilotRefreshing"
+                :aria-busy="copilotRefreshing"
+                @click="regenerateCopilotSuggestions"
+              >
+                {{ copilotRefreshing ? '生成中…' : '重新生成' }}
+              </button>
             </div>
 
             <div class="copilot-warning">
@@ -1526,7 +1628,11 @@ onBeforeUnmount(() => {
                   </span>
                 </div>
                 <p class="copilot-recommendation-text">{{ item.content }}</p>
-                <button type="button" class="copilot-use-button" @click="applyCopilotSuggestion(item.content)">
+                <button
+                  type="button"
+                  class="purple-action-button copilot-use-button"
+                  @click="applyCopilotSuggestion(item.content)"
+                >
                   採用此版本
                   <svg viewBox="0 0 24 24" aria-hidden="true" class="copilot-use-icon">
                     <path
@@ -1630,99 +1736,6 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-:global(:root) {
-  --color-primary-400: #6764f0;
-  --color-primary-500: #4c44ea;
-  --color-primary-50: #eaeafd;
-
-  --color-secondary-100: #e3e7ff;
-  --color-secondary-900: #8c89f1;
-  --color-secondary-700: #9796ff;
-  --color-secondary-600: #a0a1ff;
-  --color-secondary-500: #c8c9f1;
-  --color-secondary-50: #f5f6ff;
-
-  --color-tertiary-700: #3697b4;
-  --color-tertiary-500: #53b1cd;
-  --color-tertiary-300: #87d2e3;
-  --color-tertiary-50: #e7f6fa;
-
-  --color-yellow-500: #f1d046;
-  --color-yellow-100: #fbf1c5;
-  --color-yellow-50: #fef9e5;
-
-  --color-darkblue-500: #1f2a52;
-  --color-darkblue-50: #f1f2f5;
-
-  /* Backwards-compatible aliases used by the current page styles. */
-  --primary-400-p: var(--color-primary-400);
-  --primary-500-p: var(--color-primary-500);
-  --primary-50-p: var(--color-primary-50);
-  --primary-100-p: var(--color-secondary-50);
-  --primary-200-p: var(--color-secondary-100);
-  --primary-300-p: var(--color-secondary-600);
-  --primary-rgb-p: 103, 100, 240;
-
-  --secondary-100-p: var(--color-secondary-100);
-  --secondary-900-p: var(--color-secondary-900);
-  --secondary-700-p: var(--color-secondary-700);
-  --secondary-600-p: var(--color-secondary-600);
-  --secondary-500-p: var(--color-secondary-500);
-  --secondary-50-p: var(--color-secondary-50);
-
-  --tertiary-700-p: var(--color-tertiary-700);
-  --tertiary-500-p: var(--color-tertiary-500);
-  --tertiary-300-p: var(--color-tertiary-300);
-  --tertiary-50-p: var(--color-tertiary-50);
-
-  --yellow-500-p: var(--color-yellow-500);
-  --yellow-100-p: var(--color-yellow-100);
-  --yellow-50-p: var(--color-yellow-50);
-
-  --darkblue-500-p: var(--color-darkblue-500);
-  --darkblue-50-p: var(--color-darkblue-50);
-}
-
-:global(*) {
-  box-sizing: border-box;
-}
-
-:global(body) {
-  margin: 0;
-  font-family:
-    "Noto Sans TC",
-    "PingFang TC",
-    "Microsoft JhengHei",
-    sans-serif;
-  background: linear-gradient(180deg, #eaeafd 0%, #ffffff 100%);
-}
-
-:global(button),
-:global(input) {
-  font: inherit;
-}
-
-:global(button:focus-visible),
-:global(input:focus-visible) {
-  outline: 3px solid rgba(var(--primary-rgb-p), 0.35);
-  outline-offset: 2px;
-}
-
-:global(.sr-only) {
-  position: absolute !important;
-  width: 1px !important;
-  height: 1px !important;
-  padding: 0 !important;
-  margin: -1px !important;
-  overflow: hidden !important;
-  clip: rect(0, 0, 0, 0) !important;
-  white-space: nowrap !important;
-  border: 0 !important;
-}
-
-:global(#app) {
-  min-height: 100vh;
-}
 
 .app-shell {
   position: relative;
@@ -1732,61 +1745,61 @@ onBeforeUnmount(() => {
   background:
     radial-gradient(circle at top right, rgba(255, 255, 255, 0.82), transparent 24%),
     linear-gradient(180deg, #eaeafd 0%, #ffffff 100%);
-  color: #243247;
-  --font-size-title: 24px;
-  --font-size-button: 16px;
-  --font-size-body: 16px;
-  --font-size-body-lg: 18px;
-  --font-size-caption: 16px;
-  --font-size-chip: 16px;
-  --font-size-input: 16px;
-  --font-size-tooltip: 16px;
-  --font-size-panel-title: 18px;
-  --font-size-panel-subtitle: 14px;
-  --font-size-tab: 16px;
-  --font-size-card: 17px;
-  --font-size-card-action: 15px;
-  --font-size-feedback-title: 20px;
-  --font-size-feedback-body: 16px;
-  --font-size-feedback-action: 16px;
+  color: var(--color-text-primary);
+  --font-size-title: var(--app-font-size-title);
+  --font-size-button: var(--app-font-size-button);
+  --font-size-body: var(--app-font-size-body);
+  --font-size-body-lg: var(--app-font-size-body-lg);
+  --font-size-caption: var(--app-font-size-caption);
+  --font-size-chip: var(--app-font-size-chip);
+  --font-size-input: var(--app-font-size-input);
+  --font-size-tooltip: var(--app-font-size-tooltip);
+  --font-size-panel-title: var(--app-font-size-panel-title);
+  --font-size-panel-subtitle: var(--app-font-size-panel-subtitle);
+  --font-size-tab: var(--app-font-size-tab);
+  --font-size-card: var(--app-font-size-card);
+  --font-size-card-action: var(--app-font-size-card-action);
+  --font-size-feedback-title: var(--app-font-size-feedback-title);
+  --font-size-feedback-body: var(--app-font-size-feedback-body);
+  --font-size-feedback-action: var(--app-font-size-feedback-action);
 }
 
 .app-shell.font-size-large {
-  --font-size-title: 25px;
-  --font-size-button: 17px;
-  --font-size-body: 17px;
-  --font-size-body-lg: 19px;
-  --font-size-caption: 17px;
-  --font-size-chip: 17px;
-  --font-size-input: 17px;
-  --font-size-tooltip: 17px;
-  --font-size-panel-title: 19px;
-  --font-size-panel-subtitle: 15px;
-  --font-size-tab: 17px;
-  --font-size-card: 18px;
-  --font-size-card-action: 16px;
-  --font-size-feedback-title: 21px;
-  --font-size-feedback-body: 17px;
-  --font-size-feedback-action: 17px;
+  --font-size-title: calc(var(--app-font-size-title) + 1px);
+  --font-size-button: calc(var(--app-font-size-button) + 1px);
+  --font-size-body: calc(var(--app-font-size-body) + 1px);
+  --font-size-body-lg: calc(var(--app-font-size-body-lg) + 1px);
+  --font-size-caption: calc(var(--app-font-size-caption) + 1px);
+  --font-size-chip: calc(var(--app-font-size-chip) + 1px);
+  --font-size-input: calc(var(--app-font-size-input) + 1px);
+  --font-size-tooltip: calc(var(--app-font-size-tooltip) + 1px);
+  --font-size-panel-title: calc(var(--app-font-size-panel-title) + 1px);
+  --font-size-panel-subtitle: calc(var(--app-font-size-panel-subtitle) + 1px);
+  --font-size-tab: calc(var(--app-font-size-tab) + 1px);
+  --font-size-card: calc(var(--app-font-size-card) + 1px);
+  --font-size-card-action: calc(var(--app-font-size-card-action) + 1px);
+  --font-size-feedback-title: calc(var(--app-font-size-feedback-title) + 1px);
+  --font-size-feedback-body: calc(var(--app-font-size-feedback-body) + 1px);
+  --font-size-feedback-action: calc(var(--app-font-size-feedback-action) + 1px);
 }
 
 .app-shell.font-size-small {
-  --font-size-title: 22px;
-  --font-size-button: 15px;
-  --font-size-body: 15px;
-  --font-size-body-lg: 17px;
-  --font-size-caption: 15px;
-  --font-size-chip: 15px;
-  --font-size-input: 15px;
-  --font-size-tooltip: 15px;
-  --font-size-panel-title: 17px;
-  --font-size-panel-subtitle: 13px;
-  --font-size-tab: 15px;
-  --font-size-card: 16px;
-  --font-size-card-action: 14px;
-  --font-size-feedback-title: 19px;
-  --font-size-feedback-body: 15px;
-  --font-size-feedback-action: 15px;
+  --font-size-title: calc(var(--app-font-size-title) - 2px);
+  --font-size-button: calc(var(--app-font-size-button) - 1px);
+  --font-size-body: calc(var(--app-font-size-body) - 1px);
+  --font-size-body-lg: calc(var(--app-font-size-body-lg) - 1px);
+  --font-size-caption: calc(var(--app-font-size-caption) - 1px);
+  --font-size-chip: calc(var(--app-font-size-chip) - 1px);
+  --font-size-input: calc(var(--app-font-size-input) - 1px);
+  --font-size-tooltip: calc(var(--app-font-size-tooltip) - 1px);
+  --font-size-panel-title: calc(var(--app-font-size-panel-title) - 1px);
+  --font-size-panel-subtitle: calc(var(--app-font-size-panel-subtitle) - 1px);
+  --font-size-tab: calc(var(--app-font-size-tab) - 1px);
+  --font-size-card: calc(var(--app-font-size-card) - 1px);
+  --font-size-card-action: calc(var(--app-font-size-card-action) - 1px);
+  --font-size-feedback-title: calc(var(--app-font-size-feedback-title) - 1px);
+  --font-size-feedback-body: calc(var(--app-font-size-feedback-body) - 1px);
+  --font-size-feedback-action: calc(var(--app-font-size-feedback-action) - 1px);
 }
 
 .fixed-watermark {
@@ -1871,7 +1884,7 @@ onBeforeUnmount(() => {
 
 .route-subtitle {
   padding: 10px 16px 8px;
-  color: #445266;
+  color: var(--color-text-body);
   font-size: var(--font-size-caption);
   font-weight: 700;
 }
@@ -1907,7 +1920,7 @@ onBeforeUnmount(() => {
   backdrop-filter: blur(8px);
 }
 
-@media (min-width: 1024px) {
+@media (min-width: 768px) {
   .chat-sidebar {
     display: block;
   }
@@ -1924,10 +1937,29 @@ onBeforeUnmount(() => {
   line-height: 1.4;
 }
 
-@media (min-width: 1024px) {
+@media (min-width: 768px) {
   .copilot-sidebar {
     display: flex;
     flex-direction: column;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  .chat-sidebar {
+    width: min(32vw, 360px);
+  }
+
+  .copilot-sidebar {
+    width: min(42vw, 480px);
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1400px) {
+  .sales-footer .quick-replies-list {
+    max-height: min(28dvh, 240px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 4px;
   }
 }
 
@@ -1943,7 +1975,12 @@ onBeforeUnmount(() => {
   display: none;
 }
 
-@media (max-width: 1023px) {
+@media (max-width: 767px) {
+  .chat-layout {
+    flex-direction: column;
+    overflow: auto;
+  }
+
   .copilot-overlay {
     display: block;
     position: fixed;
@@ -1979,10 +2016,6 @@ onBeforeUnmount(() => {
     pointer-events: auto;
   }
 
-  .app-shell:not(.copilot-mobile-open) .copilot-overlay {
-    display: none;
-  }
-
   .copilot-close {
     display: grid;
     place-items: center;
@@ -1990,7 +2023,7 @@ onBeforeUnmount(() => {
     height: 44px;
     border: 0;
     background: transparent;
-    color: rgba(95, 113, 136, 0.95);
+    color: var(--color-text-muted);
     cursor: pointer;
     font-size: calc(var(--font-size-title) - 2px);
     line-height: 1;
@@ -2058,6 +2091,8 @@ onBeforeUnmount(() => {
   font-size: var(--font-size-panel-title);
   min-width: 0;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .copilot-badge {
@@ -2127,7 +2162,7 @@ onBeforeUnmount(() => {
   padding: 12px 14px;
   border-radius: 16px;
   background: transparent;
-  color: #8a97a9;
+  color: var(--color-text-muted);
   font-size: var(--font-size-tab);
   font-weight: 800;
   cursor: pointer;
@@ -2164,7 +2199,7 @@ onBeforeUnmount(() => {
   border-radius: 10px;
   font-size: 16px;
   font-weight: 500;
-  color: #7a5c00;
+  color: var(--color-text-warning);
   line-height: 1.5;
 }
 
@@ -2173,22 +2208,80 @@ onBeforeUnmount(() => {
   height: 16px;
   flex-shrink: 0;
   margin-top: 1px;
-  color: #d49a00;
+  color: var(--color-icon-warning);
 }
 
 .copilot-recommendation-count {
-  color: #6d7d92;
+  color: var(--color-text-faint);
   font-size: var(--font-size-panel-subtitle);
   font-weight: 800;
 }
 
 .copilot-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 12px;
   border: 0;
   background: transparent;
   color: var(--primary-400-p);
   font-size: var(--font-size-panel-subtitle);
   font-weight: 800;
+  line-height: 1;
   cursor: pointer;
+  border-radius: 999px;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.copilot-refresh:hover:not(:disabled) {
+  color: var(--primary-500-p);
+  background: rgba(var(--primary-rgb-p), 0.08);
+  transform: translateY(-1px);
+}
+
+.copilot-refresh:active:not(:disabled) {
+  color: #3f3ad7;
+  background: rgba(var(--primary-rgb-p), 0.14);
+  transform: translateY(1px);
+}
+
+.copilot-refresh:focus-visible {
+  outline: 3px solid var(--primary-500-p);
+  outline-offset: 2px;
+}
+
+.copilot-refresh.loading {
+  color: var(--primary-500-p);
+  background: rgba(var(--primary-rgb-p), 0.12);
+  box-shadow: inset 0 0 0 1px rgba(var(--primary-rgb-p), 0.14);
+  cursor: wait;
+}
+
+.copilot-refresh.loading::before {
+  content: '';
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 999px;
+  animation: copilot-spin 0.72s linear infinite;
+}
+
+@keyframes copilot-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .copilot-refresh.loading::before {
+    animation: none;
+  }
 }
 
 .copilot-recommendation-list {
@@ -2248,7 +2341,7 @@ onBeforeUnmount(() => {
 
 .copilot-chip-index.yellow {
   background: var(--yellow-50-p);
-  color: #c39200;
+  color: var(--color-text-yellow-accent);
 }
 
 .copilot-use-icon,
@@ -2268,28 +2361,13 @@ onBeforeUnmount(() => {
 }
 
 .copilot-use-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border: 0;
-  width: 100%;
-  margin-top: 18px;
-  padding: 14px 16px;
-  border-radius: 12px;
-  background: linear-gradient(180deg, #706df4 0%, #635cf1 100%);
-  color: #ffffff;
-  font-size: var(--font-size-card-action);
-  font-weight: 900;
-  cursor: pointer;
-  transition:
-    transform 0.15s ease,
-    filter 0.15s ease;
-}
-
-.copilot-use-button:hover {
-  filter: brightness(1.03);
-  transform: translateY(-1px);
+  --purple-action-width: 100%;
+  --purple-action-min-height: 48px;
+  --purple-action-margin-top: 18px;
+  --purple-action-padding: 14px 16px;
+  --purple-action-radius: 12px;
+  --purple-action-font-size: var(--font-size-card-action);
+  --purple-action-gap: 8px;
 }
 
 .copilot-step-panel {
@@ -2319,8 +2397,8 @@ onBeforeUnmount(() => {
   display: inline-grid;
   place-items: center;
   flex-shrink: 0;
-  width: 22px;
-  height: 22px;
+  min-width: 22px;
+  min-height: 22px;
   border-radius: 8px;
   background: var(--yellow-500-p);
   color: #ffffff;
@@ -2348,7 +2426,7 @@ onBeforeUnmount(() => {
 }
 
 .copilot-section-icon-lucide.yellow {
-  color: #c39200;
+  color: var(--color-text-yellow-accent);
 }
 
 .copilot-section {
@@ -2368,7 +2446,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   margin-bottom: 0;
-  color: rgba(95, 113, 136, 0.95);
+  color: var(--color-text-muted);
   font-size: var(--font-size-panel-title);
   font-weight: 1000;
   letter-spacing: 0;
@@ -2383,7 +2461,7 @@ onBeforeUnmount(() => {
 .copilot-context-note {
   font-size: var(--font-size-body);
   font-weight: 400;
-  color: rgba(135, 160, 188, 1);
+  color: var(--color-text-subtle);
   white-space: nowrap;
 }
 
@@ -2406,7 +2484,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  color: #5f7188;
+  color: var(--color-text-muted);
   font-weight: 400;
   font-size: var(--font-size-body);
 }
@@ -2419,7 +2497,7 @@ onBeforeUnmount(() => {
   border-radius: 999px;
   border: 1px solid transparent;
   background: rgba(var(--primary-rgb-p), 0.1);
-  color: #5f7188;
+  color: var(--color-text-muted);
 }
 
 .copilot-mood-icon {
@@ -2436,7 +2514,7 @@ onBeforeUnmount(() => {
 .copilot-mood.ok {
   background: rgba(220, 252, 231, 0.75);
   border-color: rgba(167, 243, 208, 0.9);
-  color: #15803d;
+  color: var(--color-success-text);
 }
 
 .copilot-chip {
@@ -2446,7 +2524,7 @@ onBeforeUnmount(() => {
   font-weight: 400;
   font-size: var(--font-size-body);
   background: rgba(223, 233, 245, 0.7);
-  color: #5f7188;
+  color: var(--color-text-muted);
 }
 
 .copilot-chip.warning {
@@ -2458,7 +2536,7 @@ onBeforeUnmount(() => {
 .copilot-chip.ok {
   background: rgba(220, 252, 231, 0.75);
   border-color: rgba(167, 243, 208, 0.9);
-  color: #15803d;
+  color: var(--color-success-text);
 }
 
 .copilot-progress {
@@ -2469,7 +2547,7 @@ onBeforeUnmount(() => {
 .copilot-progress-meta {
   display: flex;
   justify-content: space-between;
-  color: rgba(95, 113, 136, 0.95);
+  color: var(--color-text-muted);
   font-weight: 400;
   font-size: var(--font-size-body);
 }
@@ -2493,7 +2571,7 @@ onBeforeUnmount(() => {
 .copilot-hint {
   padding-top: 10px;
   border-top: 1px solid var(--primary-200-p);
-  color: rgba(95, 113, 136, 0.95);
+  color: var(--color-text-muted);
   font-weight: 400;
   font-size: var(--font-size-body);
   line-height: 1.55;
@@ -2527,7 +2605,7 @@ onBeforeUnmount(() => {
 }
 
 .copilot-suggestion-text {
-  color: #5f7188;
+  color: var(--color-text-muted);
   font-weight: 400;
   line-height: 1.6;
   font-size: var(--font-size-body);
@@ -2553,7 +2631,7 @@ onBeforeUnmount(() => {
   border-radius: 14px;
   border: 1px dashed rgba(195, 206, 218, 1);
   background: transparent;
-  color: rgba(95, 113, 136, 0.95);
+  color: var(--color-text-muted);
   font-weight: 400;
   font-size: var(--font-size-body);
   cursor: pointer;
@@ -2582,7 +2660,7 @@ onBeforeUnmount(() => {
   border-radius: 0 12px 12px 0;
   background: rgba(255, 255, 255, 1);
   border-left: 2px solid var(--primary-200-p);
-  color: rgba(95, 113, 136, 0.95);
+  color: var(--color-text-muted);
   font-weight: 700;
   font-size: var(--font-size-body);
   cursor: pointer;
@@ -2601,7 +2679,7 @@ onBeforeUnmount(() => {
   align-items: center;
   font-size: var(--font-size-body);
   font-weight: 400;
-  color: rgba(95, 113, 136, 0.95);
+  color: var(--color-text-muted);
 }
 
 .copilot-footer-right {
@@ -2716,7 +2794,7 @@ onBeforeUnmount(() => {
   margin-bottom: 12px;
   font-size: var(--font-size-panel-title);
   font-weight: 900;
-  color: #25364c;
+  color: var(--color-text-primary);
 }
 
 .section-bar {
@@ -2818,7 +2896,7 @@ onBeforeUnmount(() => {
   border-radius: 14px;
   border: 1px solid transparent;
   background: transparent;
-  color: #5f7188;
+  color: var(--color-text-muted);
   cursor: pointer;
   font-weight: 800;
   font-size: var(--font-size-body);
@@ -2881,7 +2959,7 @@ onBeforeUnmount(() => {
 .hotline-sub {
   font-size: var(--font-size-body);
   font-weight: 800;
-  color: rgba(95, 113, 136, 0.9);
+  color: var(--color-text-muted);
 }
 
 .message-row {
@@ -2908,7 +2986,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
-  color: #5f7188;
+  color: var(--color-text-muted);
   background: rgba(255, 255, 255, 0.7);
   border: 1px solid var(--primary-200-p);
   border-radius: 999px;
@@ -2976,7 +3054,7 @@ onBeforeUnmount(() => {
 
 .message-time {
   margin-bottom: 4px;
-  color: #5f7188;
+  color: var(--color-text-muted);
   font-size: var(--font-size-body);
   line-height: 1;
 }
@@ -2991,7 +3069,7 @@ onBeforeUnmount(() => {
 }
 
 .bubble-agent {
-  color: #445266;
+  color: var(--color-text-body);
   background: rgba(255, 255, 255, 0.96);
   border-bottom-left-radius: 4px;
   border: 1px solid var(--primary-200-p);
@@ -3154,7 +3232,7 @@ onBeforeUnmount(() => {
 }
 
 .ai-card-hero-fallback[data-icon='pulse'] {
-  color: #22b05a;
+  color: var(--color-success-text);
 }
 
 .ai-card-hero-fallback[data-icon='doc'] {
@@ -3207,7 +3285,7 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid var(--primary-200-p);
   border-radius: 0;
   cursor: pointer;
-  color: #5f7188;
+  color: var(--color-text-muted);
   font-weight: 800;
   font-size: var(--font-size-body);
   transition:
@@ -3283,7 +3361,7 @@ onBeforeUnmount(() => {
 }
 
 .status-sent {
-  color: #b6bec9;
+  color: var(--color-text-subtle);
 }
 
 .stickers-panel {
@@ -3303,7 +3381,7 @@ onBeforeUnmount(() => {
 }
 
 .stickers-header span {
-  color: #97a3b5;
+  color: var(--color-text-subtle);
   font-size: var(--font-size-caption);
   font-weight: 800;
   letter-spacing: 0.1em;
@@ -3428,12 +3506,12 @@ onBeforeUnmount(() => {
 }
 
 .feedback-option.positive:hover {
-  color: #34c759;
+  color: var(--color-success-text);
   transform: translateY(-4px);
 }
 
 .feedback-option.negative:hover {
-  color: #ff3b30;
+  color: var(--color-error);
   transform: translateY(-4px);
 }
 
@@ -3467,7 +3545,7 @@ onBeforeUnmount(() => {
   width: 64px;
   height: 64px;
   margin-bottom: 16px;
-  color: #34c759;
+  color: var(--color-success-text);
 }
 
 .feedback-fade-enter-active,
@@ -3525,7 +3603,7 @@ onBeforeUnmount(() => {
 .font-size-button {
   min-width: 40px;
   padding: 8px 10px;
-  color: #5f7188;
+  color: var(--color-text-muted);
   background: transparent;
   border: 0;
   border-radius: 10px;
@@ -3642,8 +3720,8 @@ onBeforeUnmount(() => {
 }
 
 .quick-replies-tools .quick-replies-note {
-  color: #5f7188 !important;
-  font-size: 13px !important;
+  color: var(--color-text-muted) !important;
+  font-size: 14px !important;
   font-weight: 400 !important;
   letter-spacing: 0 !important;
   opacity: 0.92 !important;
@@ -3673,11 +3751,10 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: flex-start;
   padding: 9px 12px;
-  color: #5f7188;
+  color: var(--color-text-muted);
   background: #ffffff;
   border: 1px solid var(--primary-200-p);
   border-radius: 999px;
-  box-shadow: 0 6px 14px rgba(74, 100, 126, 0.05);
   font-size: var(--font-size-chip);
   font-weight: 400;
   text-align: left;
@@ -3685,12 +3762,12 @@ onBeforeUnmount(() => {
   transition:
     transform 0.18s ease,
     border-color 0.18s ease,
-    box-shadow 0.18s ease;
+    background-color 0.18s ease,
+    color 0.18s ease;
 }
 
 .quick-reply-chip:hover {
   border-color: var(--primary-300-p);
-  box-shadow: 0 10px 18px rgba(103, 100, 240, 0.1);
   transform: translateY(-1px);
   color: #6764f0;
 }
@@ -3715,19 +3792,23 @@ onBeforeUnmount(() => {
   min-width: 250px;
   padding: 8px 10px;
   color: var(--primary-500-p);
-  background: rgba(255, 255, 255, 0.97);
+  background: #ffffff;
   border: 1px solid var(--primary-200-p);
   border-radius: 12px;
   box-shadow: 0 10px 24px rgba(var(--primary-rgb-p), 0.12);
   font-size: var(--font-size-tooltip);
   font-weight: 700;
   line-height: 1.5;
-  pointer-events: none;
   opacity: 0;
   transform: translateY(6px);
   transition:
     opacity 0.18s ease,
     transform 0.18s ease;
+}
+
+.upload-tooltip.is-visible {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .upload-tooltip::after {
@@ -3741,11 +3822,6 @@ onBeforeUnmount(() => {
   border-right: 1px solid var(--primary-200-p);
   border-bottom: 1px solid var(--primary-200-p);
   transform: rotate(45deg) translateY(-6px);
-}
-
-.upload-trigger:hover .upload-tooltip {
-  opacity: 1;
-  transform: translateY(0);
 }
 
 .icon-button,
@@ -3781,7 +3857,7 @@ onBeforeUnmount(() => {
 }
 
 .mic-button.active {
-  color: #e53935;
+  color: var(--color-error);
   animation: mic-pulse 1s ease-in-out infinite;
 }
 
@@ -3819,7 +3895,7 @@ onBeforeUnmount(() => {
 
 .input-shell input {
   width: 100%;
-  color: #445266;
+  color: var(--color-text-body);
   background: transparent;
   border: 0;
   outline: none;
@@ -3827,7 +3903,7 @@ onBeforeUnmount(() => {
 }
 
 .input-shell input::placeholder {
-  color: #6f7f93;
+  color: var(--color-text-faint);
 }
 
 .send-button {

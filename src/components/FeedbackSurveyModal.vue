@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 
 const props = defineProps({
   modelValue: {
@@ -45,7 +45,16 @@ const emit = defineEmits(['update:modelValue', 'close', 'submit']);
 const rating = ref(1);
 const comment = ref('');
 const submitted = ref(false);
+const submitError = ref('');
 const closeTimer = ref(null);
+const modalRef = ref(null);
+const ratingButtonRefs = ref([]);
+const previouslyFocusedElement = ref(null);
+const modalTitleId = 'survey-feedback-title';
+const modalDescriptionId = 'survey-feedback-description';
+const errorMessageId = 'survey-feedback-error';
+const commentId = 'survey-feedback-comment';
+const commentHintId = 'survey-feedback-comment-hint';
 
 const ratingLabels = {
   1: '有待加強',
@@ -56,6 +65,14 @@ const ratingLabels = {
 };
 
 const ratingLabel = computed(() => ratingLabels[rating.value] ?? ratingLabels[1]);
+
+const focusableSelector = [
+  'button:not([disabled])',
+  '[href]',
+  'input:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])'
+].join(', ');
 
 const clearCloseTimer = () => {
   if (closeTimer.value) {
@@ -69,15 +86,51 @@ const resetState = () => {
   rating.value = 1;
   comment.value = '';
   submitted.value = false;
+  submitError.value = '';
+  ratingButtonRefs.value = [];
+};
+
+const setRatingButtonRef = (element, index) => {
+  if (element) {
+    ratingButtonRefs.value[index] = element;
+  }
+};
+
+const focusRating = (index) => {
+  ratingButtonRefs.value[index]?.focus();
+};
+
+const focusFirstElement = async () => {
+  await nextTick();
+
+  const focusables = modalRef.value
+    ? Array.from(modalRef.value.querySelectorAll(focusableSelector))
+    : [];
+
+  const firstFocusable = focusables[0];
+  if (firstFocusable instanceof HTMLElement) {
+    firstFocusable.focus();
+  }
+};
+
+const restoreFocus = () => {
+  const trigger = previouslyFocusedElement.value;
+  if (trigger instanceof HTMLElement && typeof trigger.focus === 'function') {
+    trigger.focus();
+  }
+  previouslyFocusedElement.value = null;
 };
 
 watch(
   () => props.modelValue,
-  (isOpen) => {
+  async (isOpen) => {
     if (isOpen) {
+      previouslyFocusedElement.value = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       resetState();
+      await focusFirstElement();
     } else {
       clearCloseTimer();
+      restoreFocus();
     }
   },
   { immediate: true }
@@ -85,6 +138,7 @@ watch(
 
 onBeforeUnmount(() => {
   clearCloseTimer();
+  restoreFocus();
 });
 
 const requestClose = () => {
@@ -100,16 +154,85 @@ const setRating = (value) => {
   rating.value = value;
 };
 
+const handleRatingKeydown = (event, index) => {
+  if (submitted.value) {
+    return;
+  }
+
+  let nextIndex = index;
+
+  if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+    nextIndex = Math.min(4, index + 1);
+  } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+    nextIndex = Math.max(0, index - 1);
+  } else if (event.key === 'Home') {
+    nextIndex = 0;
+  } else if (event.key === 'End') {
+    nextIndex = 4;
+  } else {
+    return;
+  }
+
+  event.preventDefault();
+  setRating(nextIndex + 1);
+  focusRating(nextIndex);
+};
+
+const handleDialogKeydown = (event) => {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    requestClose();
+    return;
+  }
+
+  if (event.key !== 'Tab' || !modalRef.value) {
+    return;
+  }
+
+  const focusables = Array.from(modalRef.value.querySelectorAll(focusableSelector)).filter(
+    (element) => element instanceof HTMLElement && !element.hasAttribute('disabled')
+  );
+
+  if (!focusables.length) {
+    event.preventDefault();
+    return;
+  }
+
+  const firstFocusable = focusables[0];
+  const lastFocusable = focusables[focusables.length - 1];
+  const activeElement = document.activeElement;
+
+  if (event.shiftKey) {
+    if (activeElement === firstFocusable || !modalRef.value.contains(activeElement)) {
+      event.preventDefault();
+      lastFocusable.focus();
+    }
+    return;
+  }
+
+  if (activeElement === lastFocusable || !modalRef.value.contains(activeElement)) {
+    event.preventDefault();
+    firstFocusable.focus();
+  }
+};
+
 const handleSubmit = () => {
   if (submitted.value) {
     return;
   }
 
-  submitted.value = true;
-  emit('submit', {
-    rating: rating.value,
-    comment: comment.value.trim()
-  });
+  submitError.value = '';
+
+  try {
+    emit('submit', {
+      rating: rating.value,
+      comment: comment.value.trim()
+    });
+    submitted.value = true;
+  } catch (error) {
+    submitError.value = '送出失敗，請稍後再試。';
+    return;
+  }
 
   clearCloseTimer();
   closeTimer.value = window.setTimeout(() => {
@@ -121,30 +244,49 @@ const handleSubmit = () => {
 <template>
   <transition name="survey-feedback-fade">
     <div v-if="modelValue" class="survey-feedback-overlay" @click.self="requestClose">
-      <div class="survey-feedback-card" role="dialog" aria-modal="true" :aria-label="title">
+      <div
+        ref="modalRef"
+        class="survey-feedback-card"
+        role="dialog"
+        aria-modal="true"
+        :aria-labelledby="modalTitleId"
+        :aria-describedby="[modalDescriptionId, submitError ? errorMessageId : null].filter(Boolean).join(' ')"
+        tabindex="-1"
+        @keydown="handleDialogKeydown"
+      >
         <div class="survey-feedback-badge">
           <span>{{ title }}</span>
         </div>
 
         <template v-if="!submitted">
-          <div class="survey-feedback-headline">{{ headline }}</div>
-          <div class="survey-feedback-subtitle">{{ subtitle }}</div>
+          <div :id="modalTitleId" class="survey-feedback-headline">{{ headline }}</div>
+          <div :id="modalDescriptionId" class="survey-feedback-subtitle">{{ subtitle }}</div>
+          <p v-if="submitError" :id="errorMessageId" class="survey-feedback-error" role="alert">
+            {{ submitError }}
+          </p>
 
-          <div class="survey-feedback-stars" role="radiogroup" :aria-label="title">
+          <div class="survey-feedback-stars" role="radiogroup" :aria-labelledby="modalTitleId">
             <button
               v-for="star in 5"
               :key="star"
+              :ref="(element) => setRatingButtonRef(element, star - 1)"
               type="button"
               class="survey-feedback-star"
               :class="{ active: star <= rating }"
               :aria-checked="star === rating"
-              :aria-label="`${star} 顆星`"
+              :aria-label="`${star} 顆星，${ratingLabels[star]}`"
               role="radio"
+              :tabindex="star === rating ? 0 : -1"
               @click="setRating(star)"
+              @keydown="handleRatingKeydown($event, star - 1)"
             >
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path
                   d="m12 2.8 2.8 5.68 6.27.91-4.53 4.41 1.07 6.25L12 16.8 6.38 20.05l1.07-6.25L2.92 9.39l6.27-.91L12 2.8Z"
+                  :fill="star <= rating ? 'currentColor' : 'none'"
+                  :stroke="star <= rating ? 'none' : 'currentColor'"
+                  stroke-width="1.5"
+                  stroke-linejoin="round"
                 />
               </svg>
             </button>
@@ -153,17 +295,28 @@ const handleSubmit = () => {
           <div class="survey-feedback-rating">{{ ratingLabel }}</div>
 
           <label class="survey-feedback-field">
-            <span class="survey-feedback-sr-only">意見回饋</span>
+            <span class="survey-feedback-field-meta">
+              <span class="survey-feedback-field-label">意見回饋</span>
+              <span :id="commentHintId" class="survey-feedback-field-hint">選填，最多 100 字</span>
+            </span>
             <textarea
+              :id="commentId"
               v-model="comment"
               class="survey-feedback-textarea"
+              :class="{ 'is-error': Boolean(submitError) }"
               :placeholder="placeholder"
               maxlength="100"
               rows="4"
+              :aria-describedby="[commentHintId, submitError ? errorMessageId : null].filter(Boolean).join(' ')"
             />
           </label>
 
-          <button type="button" class="survey-feedback-submit" :disabled="submitted" @click="handleSubmit">
+          <button
+            type="button"
+            class="purple-action-button survey-feedback-submit"
+            :disabled="submitted"
+            @click="handleSubmit"
+          >
             {{ submitText }}
           </button>
 
@@ -199,9 +352,11 @@ const handleSubmit = () => {
   position: fixed;
   inset: 0;
   z-index: 120;
-  display: grid;
-  place-items: center;
-  padding: 24px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  overflow-y: auto;
+  padding: 24px 24px 32px;
   background:
     radial-gradient(circle at top, rgba(122, 123, 255, 0.24), transparent 28%),
     rgba(7, 12, 24, 0.82);
@@ -212,6 +367,7 @@ const handleSubmit = () => {
   position: relative;
   width: min(100%, 420px);
   padding: 28px 24px 22px;
+  margin: auto 0;
   border-radius: 34px;
   background: linear-gradient(180deg, #ffffff 0%, #fbfbfe 100%);
   box-shadow: 0 28px 64px rgba(10, 16, 34, 0.3);
@@ -231,7 +387,7 @@ const handleSubmit = () => {
   border-radius: 999px;
   box-shadow: 0 12px 24px rgba(74, 71, 230, 0.28);
   transform: translateX(-50%);
-  font-size: 14px;
+  font-size: var(--font-size-caption);
   font-weight: 500;
   letter-spacing: 0.02em;
 }
@@ -239,7 +395,7 @@ const handleSubmit = () => {
 .survey-feedback-headline {
   margin-top: 6px;
   color: #1b2340;
-  font-size: 22px;
+  font-size: var(--font-size-title);
   font-weight: 900;
   line-height: 1.28;
   letter-spacing: 0.01em;
@@ -247,9 +403,41 @@ const handleSubmit = () => {
 
 .survey-feedback-subtitle {
   margin-top: 8px;
-  color: #7d8797;
-  font-size: 14px;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-body-sm);
   font-weight: 700;
+}
+
+.survey-feedback-field {
+  display: block;
+  margin-top: 18px;
+  text-align: left;
+}
+
+.survey-feedback-field-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.survey-feedback-field-label {
+  flex: 0 0 auto;
+  color: #1b2340;
+  font-size: var(--font-size-body-sm);
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.survey-feedback-field-hint {
+  flex: 0 1 auto;
+  text-align: right;
+  color: var(--color-text-faint);
+  font-size: var(--font-size-body-sm);
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: nowrap;
 }
 
 .survey-feedback-stars {
@@ -265,11 +453,13 @@ const handleSubmit = () => {
   width: 58px;
   height: 58px;
   padding: 0;
-  color: #d8deea;
+  color: var(--color-text-subtle);
   background: transparent;
   border: 0;
+  border-radius: 999px;
   cursor: pointer;
   transition:
+    background-color 0.18s ease,
     transform 0.18s ease,
     color 0.18s ease;
 }
@@ -277,28 +467,54 @@ const handleSubmit = () => {
 .survey-feedback-star svg {
   width: 44px;
   height: 44px;
-  fill: currentColor;
 }
 
 .survey-feedback-star.active {
-  color: #ffbe16;
+  color: var(--color-icon-rating);
 }
 
 .survey-feedback-star:hover {
+  color: #b45309;
+  background: rgba(217, 119, 6, 0.12);
   transform: translateY(-2px) scale(1.04);
+}
+
+.survey-feedback-star:active:not(:disabled) {
+  color: #92400e;
+  background: rgba(217, 119, 6, 0.2);
+  transform: translateY(0) scale(0.96);
+}
+
+.survey-feedback-star.active:hover {
+  color: #b45309;
+}
+
+.survey-feedback-star:focus-visible,
+.survey-feedback-return:focus-visible,
+.survey-feedback-textarea:focus-visible {
+  outline: 3px solid var(--color-primary-500);
+  outline-offset: 3px;
 }
 
 .survey-feedback-rating {
   margin-top: 8px;
-  color: #ff9b00;
-  font-size: 14px;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-body-sm);
   font-weight: 800;
   letter-spacing: 0.03em;
 }
 
-.survey-feedback-field {
-  display: block;
-  margin-top: 18px;
+.survey-feedback-error {
+  margin-top: 14px;
+  padding: 12px 14px;
+  color: var(--color-error);
+  background: rgba(220, 38, 38, 0.08);
+  border: 1px solid rgba(220, 38, 38, 0.2);
+  border-radius: 16px;
+  font-size: var(--font-size-body-sm);
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: left;
 }
 
 .survey-feedback-textarea {
@@ -311,7 +527,7 @@ const handleSubmit = () => {
   border-radius: 22px;
   resize: none;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);
-  font-size: 16px;
+  font-size: var(--font-size-input);
   line-height: 1.6;
   outline: none;
   transition:
@@ -321,7 +537,7 @@ const handleSubmit = () => {
 }
 
 .survey-feedback-textarea::placeholder {
-  color: #97a6bf;
+  color: var(--color-text-faint);
   font-weight: 400;
 }
 
@@ -332,52 +548,47 @@ const handleSubmit = () => {
     inset 0 1px 0 rgba(255, 255, 255, 0.92);
 }
 
+.survey-feedback-textarea.is-error {
+  border-color: var(--color-error);
+  box-shadow:
+    0 0 0 4px rgba(220, 38, 38, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+}
+
+.survey-feedback-textarea:focus-visible {
+  outline: 3px solid var(--color-primary-500);
+  outline-offset: 3px;
+}
+
 .survey-feedback-submit {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  min-height: 48px;
-  margin-top: 20px;
-  color: #ffffff;
-  background: linear-gradient(180deg, #5a57f2 0%, #4b46e8 100%);
-  border: 0;
-  border-radius: 18px;
-  box-shadow: 0 14px 28px rgba(75, 70, 232, 0.28);
-  font-size: 17px;
-  font-weight: 900;
-  letter-spacing: 0.03em;
-  cursor: pointer;
-  transition:
-    transform 0.18s ease,
-    box-shadow 0.18s ease,
-    filter 0.18s ease;
-}
-
-.survey-feedback-submit:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 18px 30px rgba(75, 70, 232, 0.32);
-}
-
-.survey-feedback-submit:disabled {
-  cursor: default;
-  filter: saturate(0.95) opacity(0.92);
+  --purple-action-width: 100%;
+  --purple-action-min-height: 48px;
+  --purple-action-margin-top: 20px;
+  --purple-action-radius: 18px;
+  --purple-action-font-size: var(--font-size-button);
+  --purple-action-letter-spacing: 0.03em;
+  --purple-action-padding: 0 16px;
 }
 
 .survey-feedback-return {
   margin-top: 16px;
   padding: 0;
-  color: #9aa3b2;
+  color: var(--color-text-faint);
   background: transparent;
   border: 0;
-  font-size: 15px;
+  font-size: var(--font-size-link);
   font-weight: 800;
   cursor: pointer;
   transition: color 0.18s ease;
 }
 
 .survey-feedback-return:hover {
-  color: #6f7887;
+  color: #4f5a6d;
+}
+
+.survey-feedback-return:active:not(:disabled) {
+  color: #3e495c;
+  transform: translateY(1px);
 }
 
 .survey-feedback-success {
@@ -393,14 +604,14 @@ const handleSubmit = () => {
 .survey-feedback-success-title {
   margin-top: 18px;
   color: #1b2340;
-  font-size: 22px;
+  font-size: var(--font-size-title);
   font-weight: 900;
 }
 
 .survey-feedback-success-subtitle {
   margin-top: 8px;
-  color: #7d8797;
-  font-size: 14px;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-body-sm);
   font-weight: 700;
 }
 
@@ -449,22 +660,26 @@ const handleSubmit = () => {
     border-radius: 30px;
   }
 
-  .survey-feedback-headline,
-  .survey-feedback-success-title {
-    font-size: 20px;
-  }
-
-  .survey-feedback-subtitle,
-  .survey-feedback-rating,
-  .survey-feedback-success-subtitle,
-  .survey-feedback-return {
-    font-size: 14px;
-  }
-
   .survey-feedback-textarea {
     min-height: 110px;
     padding: 14px 16px;
-    font-size: 15px;
+  }
+
+  .survey-feedback-field-meta {
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+}
+
+@media (max-height: 760px) {
+  .survey-feedback-overlay {
+    align-items: flex-start;
+    padding-top: 16px;
+    padding-bottom: 16px;
+  }
+
+  .survey-feedback-card {
+    margin: 0;
   }
 }
 </style>

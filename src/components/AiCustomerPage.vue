@@ -1174,48 +1174,48 @@ onBeforeUnmount(() => {
     radial-gradient(circle at top right, rgba(255, 255, 255, 0.8), transparent 24%),
     linear-gradient(180deg, #eaeafd 0%, #ffffff 100%);
   color: #1f2a52;
-  --font-size-title: 24px;
-  --font-size-button: 16px;
-  --font-size-body: 16px;
-  --font-size-body-large: 20px;
-  --font-size-caption: 16px;
-  --font-size-chip: 16px;
-  --font-size-time: 16px;
-  --font-size-input: 16px;
-  --font-size-tooltip: 16px;
-  --font-size-modal-title: 20px;
-  --font-size-modal-body: 16px;
-  --font-size-feedback-icon: 28px;
+  --font-size-title: var(--app-font-size-title);
+  --font-size-button: var(--app-font-size-button);
+  --font-size-body: var(--app-font-size-body);
+  --font-size-body-large: var(--app-font-size-body-lg);
+  --font-size-caption: var(--app-font-size-caption);
+  --font-size-chip: var(--app-font-size-chip);
+  --font-size-time: var(--app-font-size-time);
+  --font-size-input: var(--app-font-size-input);
+  --font-size-tooltip: var(--app-font-size-tooltip);
+  --font-size-modal-title: var(--app-font-size-modal-title);
+  --font-size-modal-body: var(--app-font-size-modal-body);
+  --font-size-feedback-icon: var(--app-font-size-feedback-icon);
 }
 
 .app-shell.font-size-large {
-  --font-size-title: 25px;
-  --font-size-button: 17px;
-  --font-size-body: 17px;
-  --font-size-body-large: 21px;
-  --font-size-caption: 17px;
-  --font-size-chip: 17px;
-  --font-size-time: 17px;
-  --font-size-input: 17px;
-  --font-size-tooltip: 17px;
-  --font-size-modal-title: 21px;
-  --font-size-modal-body: 17px;
-  --font-size-feedback-icon: 30px;
+  --font-size-title: calc(var(--app-font-size-title) + 1px);
+  --font-size-button: calc(var(--app-font-size-button) + 1px);
+  --font-size-body: calc(var(--app-font-size-body) + 1px);
+  --font-size-body-large: calc(var(--app-font-size-body-lg) + 1px);
+  --font-size-caption: calc(var(--app-font-size-caption) + 1px);
+  --font-size-chip: calc(var(--app-font-size-chip) + 1px);
+  --font-size-time: calc(var(--app-font-size-time) + 1px);
+  --font-size-input: calc(var(--app-font-size-input) + 1px);
+  --font-size-tooltip: calc(var(--app-font-size-tooltip) + 1px);
+  --font-size-modal-title: calc(var(--app-font-size-modal-title) + 1px);
+  --font-size-modal-body: calc(var(--app-font-size-modal-body) + 1px);
+  --font-size-feedback-icon: calc(var(--app-font-size-feedback-icon) + 2px);
 }
 
 .app-shell.font-size-small {
-  --font-size-title: 22px;
-  --font-size-button: 15px;
-  --font-size-body: 15px;
-  --font-size-body-large: 18px;
-  --font-size-caption: 15px;
-  --font-size-chip: 15px;
-  --font-size-time: 14px;
-  --font-size-input: 15px;
-  --font-size-tooltip: 15px;
-  --font-size-modal-title: 19px;
-  --font-size-modal-body: 15px;
-  --font-size-feedback-icon: 26px;
+  --font-size-title: calc(var(--app-font-size-title) - 2px);
+  --font-size-button: calc(var(--app-font-size-button) - 1px);
+  --font-size-body: calc(var(--app-font-size-body) - 1px);
+  --font-size-body-large: calc(var(--app-font-size-body-lg) - 1px);
+  --font-size-caption: calc(var(--app-font-size-caption) - 1px);
+  --font-size-chip: calc(var(--app-font-size-chip) - 1px);
+  --font-size-time: calc(var(--app-font-size-time) - 2px);
+  --font-size-input: calc(var(--app-font-size-input) - 1px);
+  --font-size-tooltip: calc(var(--app-font-size-tooltip) - 1px);
+  --font-size-modal-title: calc(var(--app-font-size-modal-title) - 1px);
+  --font-size-modal-body: calc(var(--app-font-size-modal-body) - 1px);
+  --font-size-feedback-icon: calc(var(--app-font-size-feedback-icon) - 2px);
 }
 
 .chat-header,
@@ -1791,7 +1791,6 @@ onBeforeUnmount(() => {
   background: #ffffff;
   border: 1.5px solid #d7d7fb;
   border-radius: 999px;
-  box-shadow: none;
   font-size: var(--font-size-chip);
   font-weight: 700;
   cursor: pointer;
@@ -1799,13 +1798,12 @@ onBeforeUnmount(() => {
     transform 0.18s ease,
     border-color 0.18s ease,
     background-color 0.18s ease,
-    box-shadow 0.18s ease;
+    color 0.18s ease;
 }
 
 .suggestion-chip:hover {
   background: #f0f0ff;
   border-color: #b7b5f4;
-  box-shadow: 0 10px 18px rgba(103, 100, 240, 0.1);
   transform: translateY(-1px);
   color: #6764f0;
 }

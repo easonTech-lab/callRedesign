@@ -112,8 +112,16 @@ const serviceMaxOffset = ref(0);
 const copilotMobileOpen = ref(false);
 const copilotHidden = ref(false);
 const activeTab = ref('formal');
+const copilotTabs = [
+  { id: 'formal', label: '正式版' },
+  { id: 'friendly', label: '親切版' },
+  { id: 'sop', label: 'SOP版' },
+  { id: 'short', label: '簡短版' }
+];
+const copilotTabRefs = ref([]);
 const copilotVariantIndex = ref(0);
 const copilotRefreshTick = ref(0);
+const copilotRefreshing = ref(false);
 const recommendationData = {
   formal: [
     [
@@ -370,8 +378,48 @@ const copilotSuggestions = computed(() =>
     refreshStamp: copilotRefreshTick.value
   }))
 );
+const setCopilotTabRef = (element, index) => {
+  if (element) {
+    copilotTabRefs.value[index] = element;
+  }
+};
+
+const activateCopilotTab = async (tabId, shouldFocus = false) => {
+  activeTab.value = tabId;
+
+  if (!shouldFocus) {
+    return;
+  }
+
+  await nextTick();
+  const index = copilotTabs.findIndex((tab) => tab.id === tabId);
+  if (index >= 0) {
+    copilotTabRefs.value[index]?.focus();
+  }
+};
+
+const handleCopilotTabKeydown = async (event, index) => {
+  const lastIndex = copilotTabs.length - 1;
+  let nextIndex = index;
+
+  if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+    nextIndex = index === lastIndex ? 0 : index + 1;
+  } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+    nextIndex = index === 0 ? lastIndex : index - 1;
+  } else if (event.key === 'Home') {
+    nextIndex = 0;
+  } else if (event.key === 'End') {
+    nextIndex = lastIndex;
+  } else {
+    return;
+  }
+
+  event.preventDefault();
+  await activateCopilotTab(copilotTabs[nextIndex].id, true);
+};
 let uploadErrorTimer = null;
 let readStatusTimer = null;
+let copilotRefreshTimer = null;
 
 const stickers = [
   { id: 'front', name: '皮卡正面', src: withBase('/stickers/pika-front.png') },
@@ -658,11 +706,25 @@ const collapseAll = () => {
 };
 
 const regenerateCopilotSuggestions = () => {
-  const variants = recommendationData[activeTab.value] ?? [];
-  if (variants.length > 0) {
-    copilotVariantIndex.value = (copilotVariantIndex.value + 1) % variants.length;
+  if (copilotRefreshing.value) {
+    return;
   }
-  copilotRefreshTick.value += 1;
+
+  copilotRefreshing.value = true;
+
+  if (copilotRefreshTimer) {
+    clearTimeout(copilotRefreshTimer);
+  }
+
+  copilotRefreshTimer = window.setTimeout(() => {
+    const variants = recommendationData[activeTab.value] ?? [];
+    if (variants.length > 0) {
+      copilotVariantIndex.value = (copilotVariantIndex.value + 1) % variants.length;
+    }
+    copilotRefreshTick.value += 1;
+    copilotRefreshing.value = false;
+    copilotRefreshTimer = null;
+  }, 420);
 };
 
 const simulateCopilotUserMessage = () => {
@@ -770,7 +832,7 @@ const handleFileUpload = (event) => {
   ];
 
   if (file.size > maxSize) {
-    showError('檔案超過 5MB 限制');
+    showError('檔案超過 5MB 限制，請選擇小於 5MB 的檔案');
     event.target.value = '';
     return;
   }
@@ -908,6 +970,10 @@ onBeforeUnmount(() => {
     clearTimeout(readStatusTimer);
   }
 
+  if (copilotRefreshTimer) {
+    clearTimeout(copilotRefreshTimer);
+  }
+
   window.removeEventListener('resize', updateServiceMetrics);
   window.removeEventListener('keydown', handleGlobalKeydown);
 
@@ -920,6 +986,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="app-shell" :class="[fontSizeClass, { 'copilot-mobile-open': copilotMobileOpen }]">
+    <a href="#copilot-main" class="skip-to-main">跳至主要操作區</a>
     <header class="chat-header">
       <button type="button" class="end-chat-button" @click="openFeedbackModal">結束對話</button>
       <h1>{{ title }}</h1>
@@ -942,7 +1009,7 @@ onBeforeUnmount(() => {
               <line x1="12" y1="18" x2="12" y2="21" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
             </svg>
             <span class="tcp-title">音轉字即時逐字稿</span>
-            <span class="tcp-live-badge">LIVE</span>
+            <span class="tcp-live-badge" lang="en">LIVE</span>
           </div>
           <button type="button" class="tcp-collapse-btn" aria-label="收合逐字稿" @click="transcriptExpanded = false">
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1107,209 +1174,237 @@ onBeforeUnmount(() => {
         </div>
       </aside>
 
-      <!-- 收合時顯示的展開按鈕 -->
-      <button
-        v-if="props.salesCopilot && copilotHidden"
-        type="button"
-        class="copilot-show-btn"
-        aria-label="展開 AI 面板"
-        @click="copilotHidden = false"
+      <aside
+        v-if="props.salesCopilot"
+        class="copilot-sidebar"
+        :class="{ 'is-collapsed': copilotHidden }"
       >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M15 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </button>
-
-      <aside v-if="props.salesCopilot" v-show="!copilotHidden" class="copilot-sidebar">
-        <!-- Voice status mini section -->
-        <div class="copilot-voice-mini">
-          <div class="cvm-header">
-            <button
-              type="button"
-              class="cvm-expand-btn"
-              @click="transcriptExpanded ? collapseAll() : (transcriptExpanded = true)"
-            >
-              <template v-if="!transcriptExpanded">← 展開逐字稿</template>
-              <template v-else>
-                收合
-                <svg viewBox="0 0 24 24" aria-hidden="true" class="cvm-list-icon">
-                  <line x1="4" y1="7" x2="20" y2="7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                  <line x1="4" y1="12" x2="20" y2="12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                  <line x1="4" y1="17" x2="20" y2="17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                </svg>
-              </template>
-            </button>
-            <div class="cvm-title-area">
-              <span class="cvm-live-badge">音轉字即時狀況</span>
-            </div>
-            <button type="button" class="copilot-hide-btn" aria-label="隱藏 AI 面板" @click="collapseAll()">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
-          </div>
-          <div v-if="!transcriptExpanded" class="cvm-preview-row">
-            <span class="cvm-preview-text">最後轉譯：{{ callTranscript[callTranscript.length - 1].speaker }}「{{ callTranscript[callTranscript.length - 1].text.slice(0, 18) }}...」</span>
-          </div>
-        </div>
-
-        <!-- Case bar -->
-        <div class="call-case-bar copilot-case-bar">
-          <button type="button" class="case-summary-btn">
-            <svg viewBox="0 0 24 24" aria-hidden="true" class="case-summary-icon">
-              <path d="M9 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
-              <path d="M9 13h6M9 17h4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-            </svg>
-            <span>目前問題摘要</span>
-          </button>
-          <span class="case-title-text">{{ caseTitle }}</span>
-        </div>
-
-        <div class="copilot-header">
-          <div class="copilot-title">
-            <div class="copilot-badge" aria-hidden="true">
-              <svg viewBox="0 0 24 24">
-                <path
-                  d="M9 2.8h6"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.7"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-                <path
-                  d="M12 2.8v2.1"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.7"
-                  stroke-linecap="round"
-                />
-                <path
-                  d="M6.4 7.7h11.2a2.2 2.2 0 0 1 2.2 2.2v7.1a2.2 2.2 0 0 1-2.2 2.2H6.4A2.2 2.2 0 0 1 4.2 17V9.9a2.2 2.2 0 0 1 2.2-2.2Z"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.7"
-                  stroke-linejoin="round"
-                />
-                <path
-                  d="M9.2 12.2h.01M14.8 12.2h.01"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2.4"
-                  stroke-linecap="round"
-                />
-                <path
-                  d="M9.2 15.4h5.6"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.7"
-                  stroke-linecap="round"
-                />
-              </svg>
-            </div>
-            <span>AI 智能領航員</span>
-          </div>
-          <button
-            type="button"
-            class="copilot-close"
-            aria-label="關閉 AI 面板"
-            @click="copilotMobileOpen = false"
-          >
-            ✕
-          </button>
-        </div>
-
-        <div class="copilot-body">
-          <section class="copilot-section">
-            <div class="copilot-tab-shell">
-              <div class="copilot-tab-header">
-                <h3 class="copilot-tab-title">
-                  <svg viewBox="0 0 24 24" aria-hidden="true" class="copilot-tab-icon">
-                    <path d="M12 3.5 13.8 9.2 19.5 11 13.8 12.8 12 18.5 10.2 12.8 4.5 11 10.2 9.2Z" fill="currentColor" />
-                  </svg>
-                  <span>推薦類別切換</span>
-                </h3>
-              </div>
-
-              <div class="copilot-tabs">
-                <button
-                  v-for="tab in [
-                    { id: 'formal', label: '正式版' },
-                    { id: 'friendly', label: '親切版' },
-                    { id: 'sop', label: 'SOP版' },
-                    { id: 'short', label: '簡短版' }
-                  ]"
-                  :key="tab.id"
-                  type="button"
-                  class="copilot-tab"
-                  :class="{ active: activeTab === tab.id }"
-                  @click="activeTab = tab.id"
-                >
-                  {{ tab.label }}
-                </button>
-              </div>
-            </div>
-
-            <div class="copilot-recommendation-head">
-              <span class="copilot-recommendation-count">AI 推薦選項 ({{ copilotSuggestions.length }})</span>
-              <button type="button" class="copilot-refresh" @click="regenerateCopilotSuggestions">重新生成</button>
-            </div>
-
-            <div class="copilot-warning">
-              <svg viewBox="0 0 24 24" aria-hidden="true" class="copilot-warning-icon">
-                <path d="M12 3 2 20h20L12 3Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
-                <line x1="12" y1="10" x2="12" y2="14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                <circle cx="12" cy="17.5" r="0.9" fill="currentColor"/>
-              </svg>
-              <span>值機助理提供之回覆僅供參考，建議斟酌內容後再行使用。</span>
-            </div>
-
-            <div class="copilot-recommendation-list">
-              <article
-                v-for="(item, idx) in copilotSuggestions"
-                :key="`${item.id}-${item.refreshStamp}`"
-                class="copilot-recommendation-card"
+        <button
+          v-if="copilotHidden"
+          type="button"
+          class="copilot-show-btn"
+          aria-label="展開面板"
+          @click="copilotHidden = false"
+        >
+          <span>展開面板</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M15 6l-6 6 6 6"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </button>
+        <template v-else>
+          <!-- Voice status mini section -->
+          <div class="copilot-voice-mini">
+            <div class="cvm-header">
+              <button
+                type="button"
+                class="cvm-expand-btn"
+                @click="transcriptExpanded ? collapseAll() : (transcriptExpanded = true)"
               >
-                <div class="copilot-recommendation-card-head">
-                  <span
-                    class="copilot-chip-index"
-                    :class="[
-                      idx === 0 ? 'primary' : '',
-                      idx === 1 ? 'tertiary' : '',
-                      idx === 2 ? 'yellow' : ''
-                    ]"
-                  >
-                    選項 {{ idx + 1 }}
-                  </span>
-                </div>
-                <p class="copilot-recommendation-text">{{ item.content }}</p>
-              </article>
-            </div>
-          </section>
-
-          <section class="copilot-section">
-            <div class="copilot-section-title spaced">
-              <svg viewBox="0 0 24 24" aria-hidden="true" class="copilot-section-icon-lucide yellow">
-                <path d="M13 2.5 6.8 13h4.3L10.2 21.5 17.2 10H13Z" fill="currentColor" />
-              </svg>
-              <span>下一步建議</span>
-            </div>
-            <div class="copilot-step-panel">
-              <button v-for="(step, index) in nextSteps" :key="step" type="button" class="copilot-step-item">
-                <span class="copilot-step-number">{{ index + 1 }}</span>
-                <span class="copilot-step-text">{{ step }}</span>
+                <template v-if="!transcriptExpanded">← 展開逐字稿</template>
+                <template v-else>
+                  收合
+                  <svg viewBox="0 0 24 24" aria-hidden="true" class="cvm-list-icon">
+                    <line x1="4" y1="7" x2="20" y2="7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                    <line x1="4" y1="12" x2="20" y2="12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                    <line x1="4" y1="17" x2="20" y2="17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                  </svg>
+                </template>
+              </button>
+              <div class="cvm-title-area">
+                <span class="cvm-live-badge">音轉字即時狀況</span>
+              </div>
+              <button type="button" class="copilot-hide-btn" aria-label="隱藏 AI 面板" @click="collapseAll()">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
               </button>
             </div>
-          </section>
-        </div>
-
-        <div class="copilot-footer">
-          <div class="copilot-footer-left">AI 引擎：Gemini-2.5-Flash</div>
-          <div class="copilot-footer-right">
-            <span class="copilot-status-dot" aria-hidden="true"></span>
-            <span>連線正常</span>
+            <div v-if="!transcriptExpanded" class="cvm-preview-row">
+              <span class="cvm-preview-text">最後轉譯：{{ callTranscript[callTranscript.length - 1].speaker }}「{{ callTranscript[callTranscript.length - 1].text.slice(0, 18) }}...」</span>
+            </div>
           </div>
-        </div>
+
+          <!-- Case bar -->
+          <div class="call-case-bar copilot-case-bar">
+            <button type="button" class="case-summary-btn">
+              <svg viewBox="0 0 24 24" aria-hidden="true" class="case-summary-icon">
+                <path d="M9 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+                <path d="M9 13h6M9 17h4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+              </svg>
+              <span>目前問題摘要</span>
+            </button>
+            <span class="case-title-text">{{ caseTitle }}</span>
+          </div>
+
+          <div class="copilot-header">
+            <div class="copilot-title">
+              <div class="copilot-badge" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path
+                    d="M9 2.8h6"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.7"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                  <path
+                    d="M12 2.8v2.1"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.7"
+                    stroke-linecap="round"
+                  />
+                  <path
+                    d="M6.4 7.7h11.2a2.2 2.2 0 0 1 2.2 2.2v7.1a2.2 2.2 0 0 1-2.2 2.2H6.4A2.2 2.2 0 0 1 4.2 17V9.9a2.2 2.2 0 0 1 2.2-2.2Z"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.7"
+                    stroke-linejoin="round"
+                  />
+                  <path
+                    d="M9.2 12.2h.01M14.8 12.2h.01"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.4"
+                    stroke-linecap="round"
+                  />
+                  <path
+                    d="M9.2 15.4h5.6"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.7"
+                    stroke-linecap="round"
+                  />
+                </svg>
+              </div>
+              <span>AI 智能領航員</span>
+            </div>
+            <button
+              type="button"
+              class="copilot-close"
+              aria-label="關閉 AI 面板"
+              @click="copilotMobileOpen = false"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div id="copilot-main" class="copilot-body" tabindex="-1">
+            <section
+              class="copilot-section"
+              role="tabpanel"
+              id="copilot-recommendation-panel"
+              :aria-labelledby="`copilot-tab-${activeTab}`"
+            >
+              <div class="copilot-tab-shell">
+                <div class="copilot-tab-header">
+                  <h3 class="copilot-tab-title">
+                    <svg viewBox="0 0 24 24" aria-hidden="true" class="copilot-tab-icon">
+                      <path d="M12 3.5 13.8 9.2 19.5 11 13.8 12.8 12 18.5 10.2 12.8 4.5 11 10.2 9.2Z" fill="currentColor" />
+                    </svg>
+                    <span>推薦類別切換</span>
+                  </h3>
+                </div>
+
+                <div class="copilot-tabs" role="tablist" aria-label="推薦回覆類型">
+                  <button
+                    v-for="(tab, index) in copilotTabs"
+                    :key="tab.id"
+                    :ref="(element) => setCopilotTabRef(element, index)"
+                    type="button"
+                    :id="`copilot-tab-${tab.id}`"
+                    class="copilot-tab"
+                    :class="{ active: activeTab === tab.id }"
+                    role="tab"
+                    :aria-selected="activeTab === tab.id"
+                    :aria-controls="'copilot-recommendation-panel'"
+                    :tabindex="activeTab === tab.id ? 0 : -1"
+                    @click="activateCopilotTab(tab.id)"
+                    @keydown="handleCopilotTabKeydown($event, index)"
+                  >
+                    {{ tab.label }}
+                  </button>
+                </div>
+              </div>
+
+              <div class="copilot-recommendation-head">
+                <span class="copilot-recommendation-count">AI 推薦選項 ({{ copilotSuggestions.length }})</span>
+                <button
+                  type="button"
+                  class="copilot-refresh"
+                  :class="{ loading: copilotRefreshing }"
+                  :disabled="copilotRefreshing"
+                  :aria-busy="copilotRefreshing"
+                  @click="regenerateCopilotSuggestions"
+                >
+                  {{ copilotRefreshing ? '生成中…' : '重新生成' }}
+                </button>
+              </div>
+
+              <div class="copilot-warning">
+                <svg viewBox="0 0 24 24" aria-hidden="true" class="copilot-warning-icon">
+                  <path d="M12 3 2 20h20L12 3Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+                  <line x1="12" y1="10" x2="12" y2="14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                  <circle cx="12" cy="17.5" r="0.9" fill="currentColor"/>
+                </svg>
+                <span>值機助理提供之回覆僅供參考，建議斟酌內容後再行使用。</span>
+              </div>
+
+              <div class="copilot-recommendation-list">
+                <article
+                  v-for="(item, idx) in copilotSuggestions"
+                  :key="`${item.id}-${item.refreshStamp}`"
+                  class="copilot-recommendation-card"
+                >
+                  <div class="copilot-recommendation-card-head">
+                    <span
+                      class="copilot-chip-index"
+                      :class="[
+                        idx === 0 ? 'primary' : '',
+                        idx === 1 ? 'tertiary' : '',
+                        idx === 2 ? 'yellow' : ''
+                      ]"
+                    >
+                      選項 {{ idx + 1 }}
+                    </span>
+                  </div>
+                  <p class="copilot-recommendation-text">{{ item.content }}</p>
+                </article>
+              </div>
+            </section>
+
+            <section class="copilot-section">
+              <div class="copilot-section-title spaced">
+                <svg viewBox="0 0 24 24" aria-hidden="true" class="copilot-section-icon-lucide yellow">
+                  <path d="M13 2.5 6.8 13h4.3L10.2 21.5 17.2 10H13Z" fill="currentColor" />
+                </svg>
+                <span>下一步建議</span>
+              </div>
+              <div class="copilot-step-panel">
+                <button v-for="(step, index) in nextSteps" :key="step" type="button" class="copilot-step-item">
+                  <span class="copilot-step-number">{{ index + 1 }}</span>
+                  <span class="copilot-step-text">{{ step }}</span>
+                </button>
+              </div>
+            </section>
+          </div>
+
+          <div class="copilot-footer">
+            <div class="copilot-footer-left">AI 引擎：Gemini-2.5-Flash</div>
+            <div class="copilot-footer-right">
+              <span class="copilot-status-dot" aria-hidden="true"></span>
+              <span>連線正常</span>
+            </div>
+          </div>
+        </template>
       </aside>
     </div>
 
@@ -1374,99 +1469,6 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-:global(:root) {
-  --color-primary-400: #6764f0;
-  --color-primary-500: #4c44ea;
-  --color-primary-50: #eaeafd;
-
-  --color-secondary-100: #e3e7ff;
-  --color-secondary-900: #8c89f1;
-  --color-secondary-700: #9796ff;
-  --color-secondary-600: #a0a1ff;
-  --color-secondary-500: #c8c9f1;
-  --color-secondary-50: #f5f6ff;
-
-  --color-tertiary-700: #3697b4;
-  --color-tertiary-500: #53b1cd;
-  --color-tertiary-300: #87d2e3;
-  --color-tertiary-50: #e7f6fa;
-
-  --color-yellow-500: #f1d046;
-  --color-yellow-100: #fbf1c5;
-  --color-yellow-50: #fef9e5;
-
-  --color-darkblue-500: #1f2a52;
-  --color-darkblue-50: #f1f2f5;
-
-  /* Backwards-compatible aliases used by the current page styles. */
-  --primary-400-p: var(--color-primary-400);
-  --primary-500-p: var(--color-primary-500);
-  --primary-50-p: var(--color-primary-50);
-  --primary-100-p: var(--color-secondary-50);
-  --primary-200-p: var(--color-secondary-100);
-  --primary-300-p: var(--color-secondary-600);
-  --primary-rgb-p: 103, 100, 240;
-
-  --secondary-100-p: var(--color-secondary-100);
-  --secondary-900-p: var(--color-secondary-900);
-  --secondary-700-p: var(--color-secondary-700);
-  --secondary-600-p: var(--color-secondary-600);
-  --secondary-500-p: var(--color-secondary-500);
-  --secondary-50-p: var(--color-secondary-50);
-
-  --tertiary-700-p: var(--color-tertiary-700);
-  --tertiary-500-p: var(--color-tertiary-500);
-  --tertiary-300-p: var(--color-tertiary-300);
-  --tertiary-50-p: var(--color-tertiary-50);
-
-  --yellow-500-p: var(--color-yellow-500);
-  --yellow-100-p: var(--color-yellow-100);
-  --yellow-50-p: var(--color-yellow-50);
-
-  --darkblue-500-p: var(--color-darkblue-500);
-  --darkblue-50-p: var(--color-darkblue-50);
-}
-
-:global(*) {
-  box-sizing: border-box;
-}
-
-:global(body) {
-  margin: 0;
-  font-family:
-    "Noto Sans TC",
-    "PingFang TC",
-    "Microsoft JhengHei",
-    sans-serif;
-  background: linear-gradient(180deg, #eaeafd 0%, #ffffff 100%);
-}
-
-:global(button),
-:global(input) {
-  font: inherit;
-}
-
-:global(button:focus-visible),
-:global(input:focus-visible) {
-  outline: 3px solid rgba(var(--primary-rgb-p), 0.35);
-  outline-offset: 2px;
-}
-
-:global(.sr-only) {
-  position: absolute !important;
-  width: 1px !important;
-  height: 1px !important;
-  padding: 0 !important;
-  margin: -1px !important;
-  overflow: hidden !important;
-  clip: rect(0, 0, 0, 0) !important;
-  white-space: nowrap !important;
-  border: 0 !important;
-}
-
-:global(#app) {
-  min-height: 100vh;
-}
 
 .app-shell {
   position: relative;
@@ -1476,61 +1478,61 @@ onBeforeUnmount(() => {
   background:
     radial-gradient(circle at top right, rgba(255, 255, 255, 0.82), transparent 24%),
     linear-gradient(180deg, #eaeafd 0%, #ffffff 100%);
-  color: #243247;
-  --font-size-title: 24px;
-  --font-size-button: 16px;
-  --font-size-body: 16px;
-  --font-size-body-lg: 18px;
-  --font-size-caption: 16px;
-  --font-size-chip: 16px;
-  --font-size-input: 16px;
-  --font-size-tooltip: 16px;
-  --font-size-panel-title: 18px;
-  --font-size-panel-subtitle: 14px;
-  --font-size-tab: 16px;
-  --font-size-card: 17px;
-  --font-size-card-action: 15px;
-  --font-size-feedback-title: 20px;
-  --font-size-feedback-body: 16px;
-  --font-size-feedback-action: 16px;
+  color: var(--color-text-primary);
+  --font-size-title: var(--app-font-size-title);
+  --font-size-button: var(--app-font-size-button);
+  --font-size-body: var(--app-font-size-body);
+  --font-size-body-lg: var(--app-font-size-body-lg);
+  --font-size-caption: var(--app-font-size-caption);
+  --font-size-chip: var(--app-font-size-chip);
+  --font-size-input: var(--app-font-size-input);
+  --font-size-tooltip: var(--app-font-size-tooltip);
+  --font-size-panel-title: var(--app-font-size-panel-title);
+  --font-size-panel-subtitle: var(--app-font-size-panel-subtitle);
+  --font-size-tab: var(--app-font-size-tab);
+  --font-size-card: var(--app-font-size-card);
+  --font-size-card-action: var(--app-font-size-card-action);
+  --font-size-feedback-title: var(--app-font-size-feedback-title);
+  --font-size-feedback-body: var(--app-font-size-feedback-body);
+  --font-size-feedback-action: var(--app-font-size-feedback-action);
 }
 
 .app-shell.font-size-large {
-  --font-size-title: 25px;
-  --font-size-button: 17px;
-  --font-size-body: 17px;
-  --font-size-body-lg: 19px;
-  --font-size-caption: 17px;
-  --font-size-chip: 17px;
-  --font-size-input: 17px;
-  --font-size-tooltip: 17px;
-  --font-size-panel-title: 19px;
-  --font-size-panel-subtitle: 15px;
-  --font-size-tab: 17px;
-  --font-size-card: 18px;
-  --font-size-card-action: 16px;
-  --font-size-feedback-title: 21px;
-  --font-size-feedback-body: 17px;
-  --font-size-feedback-action: 17px;
+  --font-size-title: calc(var(--app-font-size-title) + 1px);
+  --font-size-button: calc(var(--app-font-size-button) + 1px);
+  --font-size-body: calc(var(--app-font-size-body) + 1px);
+  --font-size-body-lg: calc(var(--app-font-size-body-lg) + 1px);
+  --font-size-caption: calc(var(--app-font-size-caption) + 1px);
+  --font-size-chip: calc(var(--app-font-size-chip) + 1px);
+  --font-size-input: calc(var(--app-font-size-input) + 1px);
+  --font-size-tooltip: calc(var(--app-font-size-tooltip) + 1px);
+  --font-size-panel-title: calc(var(--app-font-size-panel-title) + 1px);
+  --font-size-panel-subtitle: calc(var(--app-font-size-panel-subtitle) + 1px);
+  --font-size-tab: calc(var(--app-font-size-tab) + 1px);
+  --font-size-card: calc(var(--app-font-size-card) + 1px);
+  --font-size-card-action: calc(var(--app-font-size-card-action) + 1px);
+  --font-size-feedback-title: calc(var(--app-font-size-feedback-title) + 1px);
+  --font-size-feedback-body: calc(var(--app-font-size-feedback-body) + 1px);
+  --font-size-feedback-action: calc(var(--app-font-size-feedback-action) + 1px);
 }
 
 .app-shell.font-size-small {
-  --font-size-title: 22px;
-  --font-size-button: 15px;
-  --font-size-body: 15px;
-  --font-size-body-lg: 17px;
-  --font-size-caption: 15px;
-  --font-size-chip: 15px;
-  --font-size-input: 15px;
-  --font-size-tooltip: 15px;
-  --font-size-panel-title: 17px;
-  --font-size-panel-subtitle: 13px;
-  --font-size-tab: 15px;
-  --font-size-card: 16px;
-  --font-size-card-action: 14px;
-  --font-size-feedback-title: 19px;
-  --font-size-feedback-body: 15px;
-  --font-size-feedback-action: 15px;
+  --font-size-title: calc(var(--app-font-size-title) - 2px);
+  --font-size-button: calc(var(--app-font-size-button) - 1px);
+  --font-size-body: calc(var(--app-font-size-body) - 1px);
+  --font-size-body-lg: calc(var(--app-font-size-body-lg) - 1px);
+  --font-size-caption: calc(var(--app-font-size-caption) - 1px);
+  --font-size-chip: calc(var(--app-font-size-chip) - 1px);
+  --font-size-input: calc(var(--app-font-size-input) - 1px);
+  --font-size-tooltip: calc(var(--app-font-size-tooltip) - 1px);
+  --font-size-panel-title: calc(var(--app-font-size-panel-title) - 1px);
+  --font-size-panel-subtitle: calc(var(--app-font-size-panel-subtitle) - 1px);
+  --font-size-tab: calc(var(--app-font-size-tab) - 1px);
+  --font-size-card: calc(var(--app-font-size-card) - 1px);
+  --font-size-card-action: calc(var(--app-font-size-card-action) - 1px);
+  --font-size-feedback-title: calc(var(--app-font-size-feedback-title) - 1px);
+  --font-size-feedback-body: calc(var(--app-font-size-feedback-body) - 1px);
+  --font-size-feedback-action: calc(var(--app-font-size-feedback-action) - 1px);
 }
 
 .fixed-watermark {
@@ -1579,7 +1581,7 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid #e8eef8;
   font-size: 16px;
   font-weight: 600;
-  color: #4a5568;
+  color: var(--color-text-body);
 }
 
 .copilot-case-bar {
@@ -1628,7 +1630,7 @@ onBeforeUnmount(() => {
   gap: 5px;
   font-size: 16px;
   font-weight: 600;
-  color: #22c55e;
+  color: var(--color-success-text);
   white-space: nowrap;
 }
 
@@ -1694,7 +1696,7 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
   font-size: 12px;
   font-weight: 600;
-  color: #22c55e;
+  color: var(--color-success-text);
   white-space: nowrap;
 }
 
@@ -1746,9 +1748,9 @@ onBeforeUnmount(() => {
 
 .case-number {
   flex-shrink: 0;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 400;
-  color: #9aa7bf;
+  color: var(--color-text-faint);
   white-space: nowrap;
 }
 
@@ -1798,7 +1800,7 @@ onBeforeUnmount(() => {
   gap: 6px;
   font-size: 16px;
   font-weight: 600;
-  color: #22c55e;
+  color: var(--color-success-text);
 }
 .vt-badge::before {
   content: '';
@@ -1893,7 +1895,7 @@ onBeforeUnmount(() => {
   align-items: center;
   padding: 2px 8px;
   background: #dcfce7;
-  color: #16a34a;
+  color: var(--color-success-text);
   font-size: 16px;
   font-weight: 700;
   border-radius: 4px;
@@ -1961,7 +1963,7 @@ onBeforeUnmount(() => {
 .tcp-citizen .tcp-dot { background: #f59e0b; }
 
 .tcp-staff  { color: #2b3d56; }
-.tcp-citizen { color: #d97706; }
+.tcp-citizen { color: var(--color-icon-rating); }
 
 .tcp-text {
   font-size: 16px;
@@ -1983,7 +1985,7 @@ onBeforeUnmount(() => {
   padding: 5px 16px 2px;
   font-size: 16px;
   font-weight: 600;
-  color: #4a5568;
+  color: var(--color-text-body);
 }
 
 .call-status-dot {
@@ -2034,14 +2036,19 @@ onBeforeUnmount(() => {
 
 .call-btn-hangup {
   background: #fee2e2;
-  color: #dc2626;
+  color: var(--color-error);
 }
 
 .call-btn-hangup:hover { background: #fecaca; }
 
 .chat-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
   flex-shrink: 0;
-  padding: 12px 20px 14px;
+  padding: 12px clamp(140px, 18vw, 220px) 14px 20px;
   text-align: center;
   color: #fff;
   background: linear-gradient(180deg, var(--primary-400-p) 0%, var(--primary-500-p) 100%);
@@ -2078,14 +2085,20 @@ onBeforeUnmount(() => {
 
 .chat-header h1 {
   margin: 0;
-  font-size: var(--font-size-title);
+  min-width: 0;
+  flex: 1 1 auto;
+  font-size: clamp(20px, 2.1vw, var(--font-size-title));
   font-weight: 800;
-  letter-spacing: 0.12em;
+  line-height: 1.12;
+  letter-spacing: 0.08em;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
 }
 
 .route-subtitle {
   padding: 10px 16px 8px;
-  color: #445266;
+  color: var(--color-text-body);
   font-size: var(--font-size-caption);
   font-weight: 700;
 }
@@ -2122,7 +2135,7 @@ onBeforeUnmount(() => {
   backdrop-filter: blur(8px);
 }
 
-@media (min-width: 1024px) {
+@media (min-width: 768px) {
   .chat-sidebar {
     display: block;
   }
@@ -2154,30 +2167,6 @@ onBeforeUnmount(() => {
   height: 16px;
 }
 
-.copilot-show-btn {
-  display: none;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 100%;
-  flex-shrink: 0;
-  background: #f1f3f8;
-  border: none;
-  border-left: 1px solid #e8eef8;
-  cursor: pointer;
-  color: #6764f0;
-  transition: background 0.15s ease;
-}
-
-.copilot-show-btn:hover {
-  background: #eaeafd;
-}
-
-.copilot-show-btn svg {
-  width: 18px;
-  height: 18px;
-}
-
 .copilot-sidebar {
   display: none;
   width: 520px;
@@ -2187,20 +2176,103 @@ onBeforeUnmount(() => {
   font-size: 16px;
   font-weight: 400;
   line-height: 1.4;
-  --font-size-panel-title: 16px;
-  --font-size-panel-subtitle: 16px;
-  --font-size-card: 16px;
-  --font-size-card-action: 16px;
-  --font-size-tab: 16px;
+  overflow: hidden;
+  --font-size-panel-title: calc(var(--app-font-size-panel-title) - 2px);
+  --font-size-panel-subtitle: calc(var(--app-font-size-panel-subtitle) + 2px);
+  --font-size-card: calc(var(--app-font-size-card) - 1px);
+  --font-size-card-action: calc(var(--app-font-size-card-action) + 1px);
+  --font-size-tab: var(--app-font-size-tab);
 }
 
-@media (min-width: 1024px) {
+.copilot-show-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--primary-400-p);
+  cursor: pointer;
+  padding: 0;
+  font-weight: 800;
+}
+
+.copilot-show-btn:focus-visible {
+  outline: 3px solid var(--color-primary-500);
+  outline-offset: -3px;
+}
+
+@media (min-width: 768px) {
   .copilot-sidebar {
     display: flex;
     flex-direction: column;
   }
-  .copilot-show-btn {
+
+  .copilot-sidebar.is-collapsed {
+    width: 64px;
+    min-width: 64px;
+    max-width: 64px;
+  }
+
+  .copilot-sidebar.is-collapsed .copilot-show-btn {
     display: flex;
+    flex: 1;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 0;
+    border: 0;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(241, 243, 248, 0.98));
+    color: var(--primary-400-p);
+    cursor: pointer;
+  }
+
+  .copilot-sidebar.is-collapsed .copilot-show-btn:hover {
+    background: linear-gradient(180deg, rgba(247, 248, 255, 1), rgba(234, 234, 253, 1));
+  }
+
+  .copilot-sidebar.is-collapsed .copilot-show-btn svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+  }
+
+  .copilot-sidebar.is-collapsed .copilot-show-btn span {
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    font-size: 14px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    line-height: 1.15;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  .chat-sidebar {
+    width: min(32vw, 360px);
+  }
+
+  .copilot-sidebar {
+    width: min(42vw, 520px);
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1400px) {
+  .chat-sidebar {
+    width: clamp(200px, 30vw, 360px);
+  }
+
+  .copilot-sidebar {
+    width: clamp(260px, 38vw, 420px);
+  }
+
+  .transcript-center-panel {
+    width: clamp(180px, 26vw, 340px);
   }
 }
 
@@ -2216,7 +2288,12 @@ onBeforeUnmount(() => {
   display: none;
 }
 
-@media (max-width: 1023px) {
+@media (max-width: 767px) {
+  .chat-layout {
+    flex-direction: column;
+    overflow: auto;
+  }
+
   .copilot-overlay {
     display: block;
     position: fixed;
@@ -2252,10 +2329,6 @@ onBeforeUnmount(() => {
     pointer-events: auto;
   }
 
-  .app-shell:not(.copilot-mobile-open) .copilot-overlay {
-    display: none;
-  }
-
   .copilot-close {
     display: grid;
     place-items: center;
@@ -2263,7 +2336,7 @@ onBeforeUnmount(() => {
     height: 44px;
     border: 0;
     background: transparent;
-    color: rgba(95, 113, 136, 0.95);
+    color: var(--color-text-muted);
     cursor: pointer;
     font-size: calc(var(--font-size-title) - 2px);
     line-height: 1;
@@ -2331,6 +2404,8 @@ onBeforeUnmount(() => {
   font-size: var(--font-size-panel-title);
   min-width: 0;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .copilot-badge {
@@ -2400,7 +2475,7 @@ onBeforeUnmount(() => {
   padding: 12px 14px;
   border-radius: 16px;
   background: transparent;
-  color: #8a97a9;
+  color: var(--color-text-muted);
   font-size: var(--font-size-tab);
   font-weight: 800;
   cursor: pointer;
@@ -2437,7 +2512,7 @@ onBeforeUnmount(() => {
   border-radius: 10px;
   font-size: 16px;
   font-weight: 500;
-  color: #7a5c00;
+  color: var(--color-text-warning);
   line-height: 1.5;
 }
 
@@ -2446,22 +2521,80 @@ onBeforeUnmount(() => {
   height: 16px;
   flex-shrink: 0;
   margin-top: 1px;
-  color: #d49a00;
+  color: var(--color-icon-warning);
 }
 
 .copilot-recommendation-count {
-  color: #6d7d92;
+  color: var(--color-text-faint);
   font-size: var(--font-size-panel-subtitle);
   font-weight: 800;
 }
 
 .copilot-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 12px;
   border: 0;
   background: transparent;
   color: var(--primary-400-p);
   font-size: var(--font-size-panel-subtitle);
   font-weight: 800;
+  line-height: 1;
   cursor: pointer;
+  border-radius: 999px;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.copilot-refresh:hover:not(:disabled) {
+  color: var(--primary-500-p);
+  background: rgba(var(--primary-rgb-p), 0.08);
+  transform: translateY(-1px);
+}
+
+.copilot-refresh:active:not(:disabled) {
+  color: #3f3ad7;
+  background: rgba(var(--primary-rgb-p), 0.14);
+  transform: translateY(1px);
+}
+
+.copilot-refresh:focus-visible {
+  outline: 3px solid var(--primary-500-p);
+  outline-offset: 2px;
+}
+
+.copilot-refresh.loading {
+  color: var(--primary-500-p);
+  background: rgba(var(--primary-rgb-p), 0.12);
+  box-shadow: inset 0 0 0 1px rgba(var(--primary-rgb-p), 0.14);
+  cursor: wait;
+}
+
+.copilot-refresh.loading::before {
+  content: '';
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 999px;
+  animation: copilot-spin 0.72s linear infinite;
+}
+
+@keyframes copilot-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .copilot-refresh.loading::before {
+    animation: none;
+  }
 }
 
 .copilot-recommendation-list {
@@ -2521,7 +2654,7 @@ onBeforeUnmount(() => {
 
 .copilot-chip-index.yellow {
   background: var(--yellow-50-p);
-  color: #c39200;
+  color: var(--color-text-yellow-accent);
 }
 
 .copilot-use-icon,
@@ -2538,31 +2671,6 @@ onBeforeUnmount(() => {
   font-weight: 700;
   line-height: 1.7;
   min-height: 4.5rem;
-}
-
-.copilot-use-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border: 0;
-  width: 100%;
-  margin-top: 18px;
-  padding: 14px 16px;
-  border-radius: 12px;
-  background: linear-gradient(180deg, #706df4 0%, #635cf1 100%);
-  color: #ffffff;
-  font-size: var(--font-size-card-action);
-  font-weight: 900;
-  cursor: pointer;
-  transition:
-    transform 0.15s ease,
-    filter 0.15s ease;
-}
-
-.copilot-use-button:hover {
-  filter: brightness(1.03);
-  transform: translateY(-1px);
 }
 
 .copilot-step-panel {
@@ -2592,8 +2700,8 @@ onBeforeUnmount(() => {
   display: inline-grid;
   place-items: center;
   flex-shrink: 0;
-  width: 22px;
-  height: 22px;
+  min-width: 22px;
+  min-height: 22px;
   border-radius: 8px;
   background: var(--yellow-500-p);
   color: #ffffff;
@@ -2621,7 +2729,7 @@ onBeforeUnmount(() => {
 }
 
 .copilot-section-icon-lucide.yellow {
-  color: #c39200;
+  color: var(--color-text-yellow-accent);
 }
 
 .copilot-section {
@@ -2641,7 +2749,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   margin-bottom: 0;
-  color: rgba(95, 113, 136, 0.95);
+  color: var(--color-text-muted);
   font-size: var(--font-size-panel-title);
   font-weight: 1000;
   letter-spacing: 0;
@@ -2656,7 +2764,7 @@ onBeforeUnmount(() => {
 .copilot-context-note {
   font-size: var(--font-size-body);
   font-weight: 400;
-  color: rgba(135, 160, 188, 1);
+  color: var(--color-text-subtle);
   white-space: nowrap;
 }
 
@@ -2679,7 +2787,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  color: #5f7188;
+  color: var(--color-text-muted);
   font-weight: 400;
   font-size: var(--font-size-body);
 }
@@ -2692,7 +2800,7 @@ onBeforeUnmount(() => {
   border-radius: 999px;
   border: 1px solid transparent;
   background: rgba(var(--primary-rgb-p), 0.1);
-  color: #5f7188;
+  color: var(--color-text-muted);
 }
 
 .copilot-mood-icon {
@@ -2709,7 +2817,7 @@ onBeforeUnmount(() => {
 .copilot-mood.ok {
   background: rgba(220, 252, 231, 0.75);
   border-color: rgba(167, 243, 208, 0.9);
-  color: #15803d;
+  color: var(--color-success-text);
 }
 
 .copilot-chip {
@@ -2719,7 +2827,7 @@ onBeforeUnmount(() => {
   font-weight: 400;
   font-size: var(--font-size-body);
   background: rgba(223, 233, 245, 0.7);
-  color: #5f7188;
+  color: var(--color-text-muted);
 }
 
 .copilot-chip.warning {
@@ -2731,7 +2839,7 @@ onBeforeUnmount(() => {
 .copilot-chip.ok {
   background: rgba(220, 252, 231, 0.75);
   border-color: rgba(167, 243, 208, 0.9);
-  color: #15803d;
+  color: var(--color-success-text);
 }
 
 .copilot-progress {
@@ -2742,7 +2850,7 @@ onBeforeUnmount(() => {
 .copilot-progress-meta {
   display: flex;
   justify-content: space-between;
-  color: rgba(95, 113, 136, 0.95);
+  color: var(--color-text-muted);
   font-weight: 400;
   font-size: var(--font-size-body);
 }
@@ -2766,7 +2874,7 @@ onBeforeUnmount(() => {
 .copilot-hint {
   padding-top: 10px;
   border-top: 1px solid var(--primary-200-p);
-  color: rgba(95, 113, 136, 0.95);
+  color: var(--color-text-muted);
   font-weight: 400;
   font-size: var(--font-size-body);
   line-height: 1.55;
@@ -2800,7 +2908,7 @@ onBeforeUnmount(() => {
 }
 
 .copilot-suggestion-text {
-  color: #5f7188;
+  color: var(--color-text-muted);
   font-weight: 400;
   line-height: 1.6;
   font-size: var(--font-size-body);
@@ -2826,7 +2934,7 @@ onBeforeUnmount(() => {
   border-radius: 14px;
   border: 1px dashed rgba(195, 206, 218, 1);
   background: transparent;
-  color: rgba(95, 113, 136, 0.95);
+  color: var(--color-text-muted);
   font-weight: 400;
   font-size: var(--font-size-body);
   cursor: pointer;
@@ -2855,7 +2963,7 @@ onBeforeUnmount(() => {
   border-radius: 0 12px 12px 0;
   background: rgba(255, 255, 255, 1);
   border-left: 2px solid var(--primary-200-p);
-  color: rgba(95, 113, 136, 0.95);
+  color: var(--color-text-muted);
   font-weight: 700;
   font-size: var(--font-size-body);
   cursor: pointer;
@@ -2874,14 +2982,14 @@ onBeforeUnmount(() => {
   align-items: center;
   font-size: var(--font-size-body);
   font-weight: 400;
-  color: rgba(95, 113, 136, 0.95);
+  color: var(--color-text-muted);
 }
 
 .copilot-footer-right {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: #22c55e;
+  color: var(--color-success-text);
 }
 
 .copilot-status-dot {
@@ -2990,7 +3098,7 @@ onBeforeUnmount(() => {
   margin-bottom: 12px;
   font-size: var(--font-size-panel-title);
   font-weight: 900;
-  color: #25364c;
+  color: var(--color-text-primary);
 }
 
 .section-bar {
@@ -3092,7 +3200,7 @@ onBeforeUnmount(() => {
   border-radius: 14px;
   border: 1px solid transparent;
   background: transparent;
-  color: #5f7188;
+  color: var(--color-text-muted);
   cursor: pointer;
   font-weight: 800;
   font-size: var(--font-size-body);
@@ -3155,7 +3263,7 @@ onBeforeUnmount(() => {
 .hotline-sub {
   font-size: var(--font-size-body);
   font-weight: 800;
-  color: rgba(95, 113, 136, 0.9);
+  color: var(--color-text-muted);
 }
 
 .message-row {
@@ -3182,7 +3290,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
-  color: #5f7188;
+  color: var(--color-text-muted);
   background: rgba(255, 255, 255, 0.7);
   border: 1px solid var(--primary-200-p);
   border-radius: 999px;
@@ -3250,7 +3358,7 @@ onBeforeUnmount(() => {
 
 .message-time {
   margin-bottom: 4px;
-  color: #5f7188;
+  color: var(--color-text-muted);
   font-size: var(--font-size-body);
   line-height: 1;
 }
@@ -3265,7 +3373,7 @@ onBeforeUnmount(() => {
 }
 
 .bubble-agent {
-  color: #445266;
+  color: var(--color-text-body);
   background: rgba(255, 255, 255, 0.96);
   border-bottom-left-radius: 4px;
   border: 1px solid var(--primary-200-p);
@@ -3428,7 +3536,7 @@ onBeforeUnmount(() => {
 }
 
 .ai-card-hero-fallback[data-icon='pulse'] {
-  color: #22b05a;
+  color: var(--color-success-text);
 }
 
 .ai-card-hero-fallback[data-icon='doc'] {
@@ -3481,7 +3589,7 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid var(--primary-200-p);
   border-radius: 0;
   cursor: pointer;
-  color: #5f7188;
+  color: var(--color-text-muted);
   font-weight: 800;
   font-size: var(--font-size-body);
   transition:
@@ -3557,7 +3665,7 @@ onBeforeUnmount(() => {
 }
 
 .status-sent {
-  color: #b6bec9;
+  color: var(--color-text-subtle);
 }
 
 .stickers-panel {
@@ -3577,7 +3685,7 @@ onBeforeUnmount(() => {
 }
 
 .stickers-header span {
-  color: #97a3b5;
+  color: var(--color-text-subtle);
   font-size: var(--font-size-caption);
   font-weight: 800;
   letter-spacing: 0.1em;
@@ -3702,12 +3810,12 @@ onBeforeUnmount(() => {
 }
 
 .feedback-option.positive:hover {
-  color: #34c759;
+  color: var(--color-success-text);
   transform: translateY(-4px);
 }
 
 .feedback-option.negative:hover {
-  color: #ff3b30;
+  color: var(--color-error);
   transform: translateY(-4px);
 }
 
@@ -3741,7 +3849,7 @@ onBeforeUnmount(() => {
   width: 64px;
   height: 64px;
   margin-bottom: 16px;
-  color: #34c759;
+  color: var(--color-success-text);
 }
 
 .feedback-fade-enter-active,
@@ -3799,7 +3907,7 @@ onBeforeUnmount(() => {
 .font-size-button {
   min-width: 40px;
   padding: 8px 10px;
-  color: #5f7188;
+  color: var(--color-text-muted);
   background: transparent;
   border: 0;
   border-radius: 10px;
@@ -3916,8 +4024,8 @@ onBeforeUnmount(() => {
 }
 
 .quick-replies-tools .quick-replies-note {
-  color: #5f7188 !important;
-  font-size: 13px !important;
+  color: var(--color-text-muted) !important;
+  font-size: 14px !important;
   font-weight: 400 !important;
   letter-spacing: 0 !important;
   opacity: 0.92 !important;
@@ -3947,11 +4055,10 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: flex-start;
   padding: 9px 12px;
-  color: #5f7188;
+  color: var(--color-text-muted);
   background: #ffffff;
   border: 1px solid var(--primary-200-p);
   border-radius: 999px;
-  box-shadow: 0 6px 14px rgba(74, 100, 126, 0.05);
   font-size: var(--font-size-chip);
   font-weight: 400;
   text-align: left;
@@ -3959,12 +4066,12 @@ onBeforeUnmount(() => {
   transition:
     transform 0.18s ease,
     border-color 0.18s ease,
-    box-shadow 0.18s ease;
+    background-color 0.18s ease,
+    color 0.18s ease;
 }
 
 .quick-reply-chip:hover {
   border-color: var(--primary-300-p);
-  box-shadow: 0 10px 18px rgba(103, 100, 240, 0.1);
   transform: translateY(-1px);
   color: #6764f0;
 }
@@ -3989,19 +4096,23 @@ onBeforeUnmount(() => {
   min-width: 250px;
   padding: 8px 10px;
   color: var(--primary-500-p);
-  background: rgba(255, 255, 255, 0.97);
+  background: #ffffff;
   border: 1px solid var(--primary-200-p);
   border-radius: 12px;
   box-shadow: 0 10px 24px rgba(var(--primary-rgb-p), 0.12);
   font-size: var(--font-size-tooltip);
   font-weight: 700;
   line-height: 1.5;
-  pointer-events: none;
   opacity: 0;
   transform: translateY(6px);
   transition:
     opacity 0.18s ease,
     transform 0.18s ease;
+}
+
+.upload-tooltip.is-visible {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .upload-tooltip::after {
@@ -4015,11 +4126,6 @@ onBeforeUnmount(() => {
   border-right: 1px solid var(--primary-200-p);
   border-bottom: 1px solid var(--primary-200-p);
   transform: rotate(45deg) translateY(-6px);
-}
-
-.upload-trigger:hover .upload-tooltip {
-  opacity: 1;
-  transform: translateY(0);
 }
 
 .icon-button,
@@ -4055,7 +4161,7 @@ onBeforeUnmount(() => {
 }
 
 .mic-button.active {
-  color: #e53935;
+  color: var(--color-error);
   animation: mic-pulse 1s ease-in-out infinite;
 }
 
@@ -4093,7 +4199,7 @@ onBeforeUnmount(() => {
 
 .input-shell input {
   width: 100%;
-  color: #445266;
+  color: var(--color-text-body);
   background: transparent;
   border: 0;
   outline: none;
@@ -4101,7 +4207,7 @@ onBeforeUnmount(() => {
 }
 
 .input-shell input::placeholder {
-  color: #6f7f93;
+  color: var(--color-text-faint);
 }
 
 .send-button {
