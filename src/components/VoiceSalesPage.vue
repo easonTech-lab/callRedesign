@@ -1009,7 +1009,6 @@ onBeforeUnmount(() => {
               <line x1="12" y1="18" x2="12" y2="21" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
             </svg>
             <span class="tcp-title">音轉字即時逐字稿</span>
-            <span class="tcp-live-badge" lang="en">LIVE</span>
           </div>
           <button type="button" class="tcp-collapse-btn" aria-label="收合逐字稿" @click="transcriptExpanded = false">
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1887,19 +1886,6 @@ onBeforeUnmount(() => {
   font-size: 16px;
   font-weight: 800;
   color: #2b3d56;
-  white-space: nowrap;
-}
-
-.tcp-live-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 8px;
-  background: #dcfce7;
-  color: var(--color-success-text);
-  font-size: 16px;
-  font-weight: 700;
-  border-radius: 4px;
-  letter-spacing: 0.05em;
   white-space: nowrap;
 }
 
